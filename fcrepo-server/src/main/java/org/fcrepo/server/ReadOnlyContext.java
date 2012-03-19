@@ -12,15 +12,11 @@ import java.util.Set;
 import javax.servlet.http.HttpServletRequest;
 
 import org.apache.cxf.transport.http.AbstractHTTPDestination;
-
+import org.fcrepo.common.Constants;
+import org.fcrepo.server.security.servletfilters.ExtendedHttpServletRequest;
+import org.fcrepo.utilities.DateUtility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.fcrepo.common.Constants;
-
-import org.fcrepo.server.security.servletfilters.ExtendedHttpServletRequest;
-
-import org.fcrepo.utilities.DateUtility;
 
 
 
@@ -130,6 +126,14 @@ public class ReadOnlyContext
     @Override
     public String[] getEnvironmentValues(String name) {
         return m_environmentAttributes.getStringArray(name);
+    }
+
+    public void setEnvironmentValues(MultiValueMap environmentAttributes) {
+        m_environmentAttributes = environmentAttributes;
+        if (m_environmentAttributes == null) {
+            m_environmentAttributes = new MultiValueMap();
+        }
+        m_environmentAttributes.lock();
     }
 
     @Override

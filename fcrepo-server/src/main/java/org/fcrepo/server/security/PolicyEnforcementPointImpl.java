@@ -18,6 +18,7 @@ import org.fcrepo.server.errors.authorization.AuthzDeniedException;
 import org.fcrepo.server.errors.authorization.AuthzException;
 import org.fcrepo.server.errors.authorization.AuthzOperationalException;
 import org.fcrepo.server.errors.authorization.AuthzPermittedException;
+import org.fcrepo.server.security.impl.AccumulatingPolicyStrategy;
 import org.fcrepo.server.storage.DOManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +42,11 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
     private static final Logger logger =
             LoggerFactory.getLogger(PolicyEnforcementPointImpl.class);
 
-    private static PolicyEnforcementPoint singleton = null;
+    public static final String SUBACTION_SEPARATOR = "//";
+
+    public static final String SUBRESOURCE_SEPARATOR = "//";
+
+    private static PolicyEnforcementPointImpl singleton = null;
 
     private static int count = 0;
 
@@ -53,6 +58,15 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
             "permit-all-requests";
 
     static final String ENFORCE_MODE_DENY_ALL_REQUESTS = "deny-all-requests";
+
+    public static final String XACML_SUBJECT_ID =
+            "urn:oasis:names:tc:xacml:1.0:subject:subject-id";
+
+    public static final String XACML_ACTION_ID =
+            "urn:oasis:names:tc:xacml:1.0:action:action-id";
+
+    public static final String XACML_RESOURCE_ID =
+            "urn:oasis:names:tc:xacml:1.0:resource:resource-id";
 
     private final URI XACML_SUBJECT_ID_URI;
 
@@ -109,7 +123,7 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
         }
     }
 
-    public static final PolicyEnforcementPoint getInstance() {
+    public static final PolicyEnforcementPointImpl getInstance() {
         if (singleton == null) {
             singleton = new PolicyEnforcementPointImpl();
         }
@@ -129,9 +143,6 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
 
     private final List<com.sun.xacml.finder.AttributeFinderModule> m_attrFinderModules = new ArrayList<com.sun.xacml.finder.AttributeFinderModule>(0);
 
-    /* (non-Javadoc)
-     * @see org.fcrepo.server.security.PolicyEnforcementPoint#setAttributeFinderModules(java.util.List)
-     */
     @Override
     public void setAttributeFinderModules(List<com.sun.xacml.finder.AttributeFinderModule> attrFinderModules){
         this.m_attrFinderModules.clear();
@@ -147,18 +158,19 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
 
         PolicyFinder policyFinder = new PolicyFinder();
 
-        Set<PolicyFinderModule> policyModules =
-                new HashSet<PolicyFinderModule>();
+        Set<com.sun.xacml.finder.PolicyFinderModule> policyModules =
+                new HashSet<com.sun.xacml.finder.PolicyFinderModule>();
         PolicyFinderModule combinedPolicyModule = null;
         combinedPolicyModule =
                 new PolicyFinderModule(combiningAlgorithm,
                                        globalPolicyConfig,
                                        globalBackendPolicyConfig,
                                        globalPolicyGuiToolConfig,
-                                       manager,
                                        validateRepositoryPolicies,
                                        validateObjectPoliciesFromDatastream,
-                                       policyParser);
+                                       policyParser,
+                                       policyStrategy);
+
         logger.debug("after constucting fedora policy finder module");
         logger.debug("before adding fedora policy finder module to policy finder hashset");
         policyModules.add(combinedPolicyModule);
@@ -192,9 +204,8 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
 
     String ownerIdSeparator = ",";
 
-    /* (non-Javadoc)
-     * @see org.fcrepo.server.security.PolicyEnforcementPoint#initPep(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, org.fcrepo.server.storage.DOManager, boolean, boolean, org.fcrepo.server.security.PolicyParser, java.lang.String)
-     */
+    PolicyStrategy policyStrategy;
+
     @Override
     public void initPep(String enforceMode,
                         String combiningAlgorithm,
@@ -225,26 +236,27 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
         this.validateObjectPoliciesFromDatastream =
                 validateObjectPoliciesFromDatastream;
         this.ownerIdSeparator = ownerIdSeparator;
+        if (this.policyStrategy == null){
+            this.policyStrategy = new AccumulatingPolicyStrategy(manager);
+        }
         newPdp();
     }
 
-    /* (non-Javadoc)
-     * @see org.fcrepo.server.security.PolicyEnforcementPoint#inactivate()
-     */
     @Override
     public void inactivate() {
         destroy();
     }
 
-    /* (non-Javadoc)
-     * @see org.fcrepo.server.security.PolicyEnforcementPoint#destroy()
-     */
     @Override
     public void destroy() {
         pdp = null;
     }
 
-    private final Set<Subject> wrapSubjects(String subjectLoginId) {
+    public void setPolicyStrategy(PolicyStrategy policyStrategy) {
+        this.policyStrategy = policyStrategy;
+    }
+
+    private final Set wrapSubjects(String subjectLoginId) {
         logger.debug("wrapSubjectIdAsSubjects(): " + subjectLoginId);
         StringAttribute stringAttribute = new StringAttribute("");
         Attribute subjectAttribute =
@@ -271,7 +283,7 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
         return subjects;
     }
 
-    private final Set<Attribute> wrapActions(String actionId,
+    private final Set wrapActions(String actionId,
                                   String actionApi,
                                   String contextIndex) {
         Set<Attribute> actions = new HashSet<Attribute>();
@@ -302,7 +314,7 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
         return actions;
     }
 
-    private final Set<Attribute> wrapResources(String pid, String namespace)
+    private final Set wrapResources(String pid, String namespace)
             throws AuthzOperationalException {
         Set<Attribute> resources = new HashSet<Attribute>();
         Attribute attribute = null;
@@ -335,9 +347,6 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
 
     private final Set NULL_SET = new HashSet();
 
-    /* (non-Javadoc)
-     * @see org.fcrepo.server.security.PolicyEnforcementPoint#enforce(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, org.fcrepo.server.Context)
-     */
     @Override
     public final void enforce(String subjectId,
                               String action,
@@ -365,18 +374,19 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
                 try {
                     contextIndex = (new Integer(next())).toString();
                     logger.debug("context index set=" + contextIndex);
-                    Set<Subject> subjects = wrapSubjects(subjectId);
-                    Set<Attribute> actions = wrapActions(action, api, contextIndex);
-                    Set<Attribute> resources = wrapResources(pid, namespace);
+                    Set subjects = wrapSubjects(subjectId);
+                    Set actions = wrapActions(action, api, contextIndex);
+                    Set resources = wrapResources(pid, namespace);
 
                     RequestCtx request =
                             new RequestCtx(subjects,
                                            resources,
                                            actions,
                                            NULL_SET);
-                    Iterator<Attribute> tempit = actions.iterator();
+                    Set tempset = request.getAction();
+                    Iterator tempit = tempset.iterator();
                     while (tempit.hasNext()) {
-                        Attribute tempobj = tempit.next();
+                        Attribute tempobj = (Attribute) tempit.next();
                         logger.debug("request action has " + tempobj.getId() + "="
                                 + tempobj.getValue().toString());
                     }
