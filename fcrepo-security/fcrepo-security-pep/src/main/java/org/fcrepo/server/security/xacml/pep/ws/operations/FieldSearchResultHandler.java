@@ -26,6 +26,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.xml.soap.SOAPElement;
+import javax.xml.ws.handler.soap.SOAPMessageContext;
+
 import com.sun.xacml.attr.AnyURIAttribute;
 import com.sun.xacml.attr.AttributeValue;
 import com.sun.xacml.attr.StringAttribute;
@@ -33,9 +36,6 @@ import com.sun.xacml.ctx.RequestCtx;
 import com.sun.xacml.ctx.ResponseCtx;
 import com.sun.xacml.ctx.Result;
 import com.sun.xacml.ctx.Status;
-
-import org.apache.axis.MessageContext;
-import org.apache.axis.message.RPCParam;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,16 +83,17 @@ public class FieldSearchResultHandler
      * @return the new search result object without non-permissable items
      * @throws PEPException
      */
-    public FieldSearchResult filter(MessageContext context,
+    public FieldSearchResult filter(SOAPMessageContext context,
                                     FieldSearchResult result)
             throws PEPException {
-        ObjectFields[] objs = result.getResultList();
+        if (result == null || result.getResultList() == null || result.getResultList().getObjectFields() == null || result.getResultList().getObjectFields().isEmpty()) {
+            return result;
+        }
+        List<ObjectFields> objs = result.getResultList().getObjectFields();
         List<String> requests = new ArrayList<String>();
         Map<String, ObjectFields> objects = new HashMap<String, ObjectFields>();
 
-        if (objs.length == 0) {
-            return result;
-        }
+
 
         for (ObjectFields o : objs) {
             if (logger.isDebugEnabled()) {
@@ -104,7 +105,7 @@ public class FieldSearchResultHandler
             Map<URI, AttributeValue> resAttr =
                     new HashMap<URI, AttributeValue>();
 
-            String pid = o.getPid();
+            String pid = o.getPid() != null ? o.getPid().getValue() : null;
             if (pid != null && !"".equals(pid)) {
                 objects.put(pid, o);
 
@@ -173,20 +174,19 @@ public class FieldSearchResultHandler
                 }
             }
         }
-
-        result.setResultList(resultObjects
-                .toArray(new ObjectFields[resultObjects.size()]));
-
+        FieldSearchResult.ResultList rl = new FieldSearchResult.ResultList();
+        rl.getObjectFields().addAll(resultObjects);
+        result.setResultList(rl);
         return result;
     }
 
     /*
      * (non-Javadoc)
      * @see
-     * org.fcrepo.server.security.xacml.pep.ws.operations.OperationHandler#handleRequest(org.apache
-     * .axis.MessageContext)
+     * org.fcrepo.server.security.xacml.pep.ws.operations.OperationHandler#handleRequest(SOAPMessageContext)
      */
-    public RequestCtx handleRequest(MessageContext context)
+    @Override
+    public RequestCtx handleRequest(SOAPMessageContext context)
             throws OperationHandlerException {
         RequestCtx req = null;
 
@@ -222,18 +222,17 @@ public class FieldSearchResultHandler
     /*
      * (non-Javadoc)
      * @see
-     * org.fcrepo.server.security.xacml.pep.ws.operations.OperationHandler#handleResponse(org.apache
-     * .axis.MessageContext)
+     * org.fcrepo.server.security.xacml.pep.ws.operations.OperationHandler#handleResponse(SOAPMessageContext)
      */
-    public RequestCtx handleResponse(MessageContext context)
+    @Override
+    public RequestCtx handleResponse(SOAPMessageContext context)
             throws OperationHandlerException {
         try {
+            // FieldSearchResult (mtom version or not) can be determined by the namespace
             FieldSearchResult result =
-                    (FieldSearchResult) getSOAPResponseObject(context);
+                    (FieldSearchResult) getSOAPResponseObject(context, FieldSearchResult.class);
             result = filter(context, result);
-            RPCParam param =
-                    new RPCParam(context.getOperation().getReturnQName(),
-                                 result);
+            SOAPElement param = null; // TODO FieldSearchResult -?-> SOAPElement ?
             setSOAPResponseObject(context, param);
         } catch (Exception e) {
             logger.error("Error filtering Objects", e);

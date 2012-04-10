@@ -56,8 +56,6 @@ import com.sun.xacml.ctx.ResponseCtx;
 import com.sun.xacml.ctx.Result;
 import com.sun.xacml.ctx.Status;
 
-import org.apache.axis.AxisFault;
-
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -73,6 +71,7 @@ import org.fcrepo.server.security.xacml.MelcoeXacmlException;
 import org.fcrepo.server.security.xacml.pep.PEPException;
 import org.fcrepo.server.security.xacml.util.ContextUtil;
 import org.fcrepo.server.security.xacml.util.LogUtil;
+import org.fcrepo.server.utilities.CXFUtility;
 
 
 /**
@@ -121,6 +120,7 @@ public class SearchFilter
      * org.fcrepo.server.security.xacml.pep.rest.filters.RESTFilter#handleRequest(javax.servlet
      * .http.HttpServletRequest, javax.servlet.http.HttpServletResponse)
      */
+    @Override
     public RequestCtx handleRequest(HttpServletRequest request,
                                     HttpServletResponse response)
             throws IOException, ServletException {
@@ -156,7 +156,7 @@ public class SearchFilter
                             null);
         } catch (Exception e) {
             logger.error(e.getMessage());
-            throw AxisFault.makeFault(e);
+            CXFUtility.getFault(e);
         }
 
         return req;
@@ -168,6 +168,7 @@ public class SearchFilter
      * org.fcrepo.server.security.xacml.pep.rest.filters.RESTFilter#handleResponse(javax.servlet
      * .http.HttpServletRequest, javax.servlet.http.HttpServletResponse)
      */
+    @Override
     public RequestCtx handleResponse(HttpServletRequest request,
                                      HttpServletResponse response)
             throws IOException, ServletException {

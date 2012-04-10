@@ -2,6 +2,7 @@
  * detailed in the license directory at the root of the source tree (also
  * available online at http://fedora-commons.org/license/).
  */
+
 package org.fcrepo.client;
 
 import java.io.BufferedReader;
@@ -10,11 +11,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
+
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
+
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -39,18 +43,23 @@ import org.apache.commons.httpclient.methods.PostMethod;
 import org.apache.commons.httpclient.methods.multipart.FilePart;
 import org.apache.commons.httpclient.methods.multipart.MultipartRequestEntity;
 import org.apache.commons.httpclient.methods.multipart.Part;
-import org.fcrepo.common.Constants;
-import org.fcrepo.server.access.FedoraAPIA;
-import org.fcrepo.server.management.FedoraAPIM;
-import org.fcrepo.utilities.DateUtility;
 
 import org.jrdf.graph.Literal;
 import org.jrdf.graph.Node;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 import org.trippi.RDFFormat;
 import org.trippi.TrippiException;
 import org.trippi.TupleIterator;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.fcrepo.common.Constants;
+
+import org.fcrepo.server.access.FedoraAPIAMTOM;
+import org.fcrepo.server.management.FedoraAPIMMTOM;
+
+import org.fcrepo.utilities.DateUtility;
 
 /**
  * General-purpose utility class for Fedora clients. Provides methods to get
@@ -81,13 +90,14 @@ public class FedoraClient
     /** Whether to automatically follow HTTP redirects. */
     public boolean FOLLOW_REDIRECTS = true;
 
-    private static final Logger logger =
-            LoggerFactory.getLogger(FedoraClient.class);
+    private static final Logger logger = LoggerFactory
+            .getLogger(FedoraClient.class);
 
-    private final SOAPEndpoint m_accessEndpoint = new SOAPEndpoint("access");
+    private final SOAPEndpoint m_accessEndpoint =
+            new SOAPEndpoint("accessMTOM");
 
     private final SOAPEndpoint m_managementEndpoint =
-            new SOAPEndpoint("management");
+            new SOAPEndpoint("managementMTOM");
 
     private String m_baseURL;
 
@@ -320,9 +330,8 @@ public class FedoraClient
             if (status != 200) {
                 if (followRedirects && 300 <= status && status <= 399) {
                     // Handle the redirect here !
-                    logger
-                            .debug("FedoraClient is handling redirect for HTTP STATUS="
-                                    + status);
+                    logger.debug("FedoraClient is handling redirect for HTTP STATUS="
+                            + status);
                     Header hLoc = in.getResponseHeader("location");
                     if (hLoc != null) {
                         logger.debug("FedoraClient is trying redirect location: "
@@ -436,8 +445,8 @@ public class FedoraClient
      * instead, the redirect will be followed and SSL will be used
      * automatically.
      */
-    public FedoraAPIA getAPIA() throws ServiceException, IOException {
-        return (FedoraAPIA) getSOAPStub(m_accessEndpoint);
+    public FedoraAPIAMTOM getAPIA() throws ServiceException, IOException {
+        return (FedoraAPIAMTOM) getSOAPStub(m_accessEndpoint);
     }
 
     public URL getAPIAEndpointURL() throws IOException {
@@ -451,8 +460,8 @@ public class FedoraClient
      * instead, the redirect will be followed and SSL will be used
      * automatically.
      */
-    public FedoraAPIM getAPIM() throws ServiceException, IOException {
-        return (FedoraAPIM) getSOAPStub(m_managementEndpoint);
+    public FedoraAPIMMTOM getAPIM() throws ServiceException, IOException {
+        return (FedoraAPIMMTOM) getSOAPStub(m_managementEndpoint);
     }
 
     public URL getAPIMEndpointURL() throws IOException {
@@ -477,12 +486,12 @@ public class FedoraClient
 
         if (endpoint == m_accessEndpoint) {
             APIAStubFactory.SOCKET_TIMEOUT_SECONDS = SOCKET_TIMEOUT_SECONDS;
-            return APIAStubFactory.getStubAltPath(protocol, host, port, url
-                    .getPath(), m_user, m_pass);
+            return APIAStubFactory
+                    .getStub(protocol, host, port, m_user, m_pass);
         } else if (endpoint == m_managementEndpoint) {
             APIMStubFactory.SOCKET_TIMEOUT_SECONDS = SOCKET_TIMEOUT_SECONDS;
-            return APIMStubFactory.getStubAltPath(protocol, host, port, url
-                    .getPath(), m_user, m_pass);
+            return APIMStubFactory
+                    .getStub(protocol, host, port, m_user, m_pass);
         } else {
             throw new IllegalArgumentException("Unrecognized endpoint: "
                     + endpoint.getName());
@@ -652,7 +661,9 @@ public class FedoraClient
      * <em>String</em> values for parameters that should be passed to the
      * service. Two parameters are required: 1) lang 2) query Two parameters to
      * the risearch service are implied: 1) type = tuples 2) format = sparql See
-     * http://www.fedora.info/download/2.0/userdocs/server/webservices/risearch/#app.tuples
+     * http
+     * ://www.fedora.info/download/2.0/userdocs/server/webservices/risearch/#
+     * app.tuples
      */
     public TupleIterator getTuples(Map<String, String> params)
             throws IOException {
@@ -732,9 +743,9 @@ public class FedoraClient
      * name and a URL. The endpoint name is provided to the constructor. The URL
      * is determined automatically, once, based on:
      * <ul>
-     * <li> The baseURL provided to the FedoraClient instance.</li>
-     * <li> The server version.</li>
-     * <li> Whether the server automatically redirects non-SSL SOAP requests to
+     * <li>The baseURL provided to the FedoraClient instance.</li>
+     * <li>The server version.</li>
+     * <li>Whether the server automatically redirects non-SSL SOAP requests to
      * an SSL endpoint.</li>
      * </ul>
      */
@@ -753,33 +764,8 @@ public class FedoraClient
         }
 
         public URL getURL() throws IOException {
-            // only do this once -- future invocations will use the saved value.
             if (m_url == null) {
-                // The endpoint URL has not been determined yet.
-                // It will be determined in the following manner:
-                //
-                // If the Fedora server version is 2.0:
-                //   url = (baseURL)/(endpointName)/soap
-                // Otherwise, the Fedora server version must be 2.1+:
-                //   If (baseURL) specifies "http":
-                //     Hit (baseURL)/services/(endpointName).
-                //     If it redirects:
-                //       url = (redirectURL)
-                //     Otherwise:
-                //       url = (baseURL)/services/(endpointName)
-                //   Otherwise:
-                //       url = (baseURL)/services/(endpointName)
-                //
-                if (getServerVersion().equals("2.0")) {
-                    m_url = new URL(m_baseURL + m_name + "/soap");
-                } else {
-                    if (m_baseURL.startsWith("http:")) {
-                        m_url = getRedirectURL("/services/" + m_name);
-                    }
-                    if (m_url == null) {
-                        m_url = new URL(m_baseURL + "services/" + m_name);
-                    }
-                }
+                m_url = new URL(m_baseURL + "services/" + m_name);
             }
             return m_url;
         }

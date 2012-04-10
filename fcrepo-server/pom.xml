@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
   <parent>
     <groupId>org.fcrepo</groupId>
@@ -122,7 +122,7 @@
               <classpathScope>runtime</classpathScope>
             </configuration>
           </execution>
-          
+
           <execution>
             <id>gen-vocab</id>
             <phase>process-classes</phase>
@@ -342,18 +342,6 @@
       <groupId>asm</groupId>
       <artifactId>asm</artifactId>
       <version>3.1</version>
-    </dependency>
-
-    <dependency>
-      <groupId>axis</groupId>
-      <artifactId>axis-wsdl4j</artifactId>
-      <version>1.3</version>
-      <exclusions>
-        <exclusion>
-          <groupId>wsdl4j</groupId>
-          <artifactId>wsdl4j</artifactId>
-        </exclusion>
-      </exclusions>
     </dependency>
 
     <dependency>
@@ -616,12 +604,6 @@
       <artifactId>akubra-mem</artifactId>
       <version>0.3</version>
     </dependency>
-
-    <dependency>
-      <groupId>org.fcrepo</groupId>
-      <artifactId>axis</artifactId>
-    </dependency>
-
     <dependency>
       <groupId>org.fcrepo</groupId>
       <artifactId>GroboTestingJUnit-core</artifactId>
@@ -640,6 +622,23 @@
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-beans</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.cxf</groupId>
+      <artifactId>cxf-bundle</artifactId>
+      <version>${cxf.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>commons-logging</groupId>
+          <artifactId>commons-logging</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>com.sun.xml.ws</groupId>
+      <artifactId>jaxws-rt</artifactId>
+      <version>2.1.4</version>
     </dependency>
 
     <!-- Note: No demonstrated evidence of use. DWD 9/15/2009 -->

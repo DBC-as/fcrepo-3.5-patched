@@ -5,11 +5,21 @@
 
 package org.fcrepo.utilities.install;
 
-import java.io.*;
-
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileFilter;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.io.Writer;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-
 import java.util.Properties;
 
 import org.apache.commons.io.IOUtils;
@@ -21,7 +31,6 @@ import org.fcrepo.server.security.BESecurityConfig;
 import org.fcrepo.server.security.DefaultRoleConfig;
 import org.fcrepo.server.security.servletfilters.xmluserfile.FedoraUsers;
 import org.fcrepo.server.security.servletfilters.xmluserfile.User;
-
 import org.fcrepo.utilities.ExecUtility;
 import org.fcrepo.utilities.FileUtils;
 import org.fcrepo.utilities.Zip;
@@ -302,6 +311,9 @@ public class FedoraHome {
 
         springProps.put("security.fesl.authN.jaas.apia.enabled", _opts
                         .getValue(InstallOptions.APIA_AUTH_REQUIRED, "false"));
+
+        springProps.put("security.fesl.authZ.enabled", _opts
+                        .getValue(InstallOptions.FESL_AUTHZ_ENABLED, "false"));
 
         /* Set up authN, authZ filter configuration */
         StringBuilder filters = new StringBuilder();

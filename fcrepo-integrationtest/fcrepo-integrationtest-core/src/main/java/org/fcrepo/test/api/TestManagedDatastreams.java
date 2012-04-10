@@ -12,11 +12,12 @@ import java.io.InputStream;
 import java.io.StringWriter;
 import java.io.Writer;
 
-import java.rmi.RemoteException;
-
 import java.security.MessageDigest;
 
 import java.util.Date;
+import java.util.Locale;
+
+import javax.xml.ws.soap.SOAPFaultException;
 
 import org.apache.abdera.Abdera;
 import org.apache.abdera.ext.thread.ThreadHelper;
@@ -28,13 +29,16 @@ import org.apache.abdera.model.Link;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.remoting.soap.SoapFaultException;
 
 import junit.framework.JUnit4TestAdapter;
 
 import org.fcrepo.common.PID;
 
-import org.fcrepo.server.management.FedoraAPIM;
+import org.fcrepo.server.management.FedoraAPIMMTOM;
+import org.fcrepo.server.types.mtom.gen.ArrayOfString;
 import org.fcrepo.server.utilities.StringUtility;
+import org.fcrepo.server.utilities.TypeUtility;
 
 import org.fcrepo.test.FedoraServerTestCase;
 
@@ -52,7 +56,7 @@ import org.fcrepo.utilities.Foxml11Document.State;
 public class TestManagedDatastreams
         extends FedoraServerTestCase {
 
-    private FedoraAPIM apim;
+    private FedoraAPIMMTOM apim;
 
     private Abdera abdera;
 
@@ -95,30 +99,30 @@ public class TestManagedDatastreams
 
         for (String contentLocation : copyTempFileLocations) {
             try {
-                apim.ingest(getAtomObject(pid, contentLocation), ATOM1_1.uri, null);
+                apim.ingest(TypeUtility.convertBytesToDataHandler(getAtomObject(pid, contentLocation)), ATOM1_1.uri, null);
                 fail("ingest should have failed with " + contentLocation);
-            } catch (RemoteException e) {
+            } catch (SOAPFaultException e) {
                 assertTrue(e.getMessage().contains("ValidationException"));
             }
             try {
-                apim.ingest(getFoxmlObject(pid, contentLocation), FOXML1_1.uri, null);
+                apim.ingest(TypeUtility.convertBytesToDataHandler(getFoxmlObject(pid, contentLocation)), FOXML1_1.uri, null);
                 fail("ingest should have failed with " + contentLocation);
-            } catch (RemoteException e) {
+            } catch (SoapFaultException e) {
                 assertTrue(e.getMessage().contains("ObjectIntegrityException"));
             }
         }
 
         for (String contentLocation : uploadedLocations) {
             try {
-                apim.ingest(getAtomObject(pid, contentLocation), ATOM1_1.uri, null);
+                apim.ingest(TypeUtility.convertBytesToDataHandler(getAtomObject(pid, contentLocation)), ATOM1_1.uri, null);
                 fail("ingest should have failed with " + contentLocation);
-            } catch (RemoteException e) {
+            } catch (SoapFaultException e) {
                 assertTrue(e.getMessage().contains("StreamReadException"));
             }
             try {
-                apim.ingest(getFoxmlObject(pid, contentLocation), FOXML1_1.uri, null);
+                apim.ingest(TypeUtility.convertBytesToDataHandler(getFoxmlObject(pid, contentLocation)), FOXML1_1.uri, null);
                 fail("ingest should have failed with " + contentLocation);
-            } catch (RemoteException e) {
+            } catch (SoapFaultException e) {
                 assertTrue(e.getMessage().contains("StreamReadException"));
             }
         }
@@ -128,7 +132,7 @@ public class TestManagedDatastreams
     public void testAddDatastream() throws Exception {
         String pid = "demo:m_ds_test_add";
 
-        apim.ingest(getAtomObject(pid, null), ATOM1_1.uri, null);
+        apim.ingest(TypeUtility.convertBytesToDataHandler(getAtomObject(pid, null)), ATOM1_1.uri, null);
 
         try {
             for (String contentLocation : copyTempFileLocations) {
@@ -136,7 +140,7 @@ public class TestManagedDatastreams
                     addDatastream(pid, contentLocation);
                     fail("addDatastream should have failed with "
                          + contentLocation);
-                } catch (RemoteException e) {
+                } catch (SoapFaultException e) {
                     assertTrue(e.getMessage().contains("ValidationException"));
                 }
             }
@@ -146,7 +150,7 @@ public class TestManagedDatastreams
                     addDatastream(pid, contentLocation);
                     fail("addDatastream should have failed with "
                          + contentLocation);
-                } catch (RemoteException e) {
+                } catch (SoapFaultException e) {
                     assertTrue(e.getMessage().contains("StreamReadException"));
                 }
             }
@@ -160,14 +164,14 @@ public class TestManagedDatastreams
     public void testModifyDatastreamByReference() throws Exception {
         String pid = "demo:m_ds_test_add";
         String dsLocation = getBaseURL() + "/get/fedora-system:ContentModel-3.0/DC";
-        apim.ingest(getAtomObject(pid, dsLocation), ATOM1_1.uri, null);
+        apim.ingest(TypeUtility.convertBytesToDataHandler(getAtomObject(pid, dsLocation)), ATOM1_1.uri, null);
 
         try {
             for (String contentLocation : copyTempFileLocations) {
                 try {
                     modifyDatastreamByReference(pid, contentLocation);
                     fail("modifyDatastreamByReference should have failed with " + contentLocation);
-                } catch (RemoteException e) {
+                } catch (SoapFaultException e) {
                     assertTrue(e.getMessage().contains("ValidationException"));
                 }
             }
@@ -176,7 +180,7 @@ public class TestManagedDatastreams
                 try {
                     modifyDatastreamByReference(pid, contentLocation);
                     fail("modifyDatastreamByReference should have failed with " + contentLocation);
-                } catch (RemoteException e) {
+                } catch (SoapFaultException e) {
                     assertTrue(e.getMessage().contains("StreamReadException"));
                 }
             }
@@ -193,7 +197,7 @@ public class TestManagedDatastreams
     public void testAddDatastreamWithChecksum() throws Exception {
         String pid = "demo:m_ds_test_add";
         String checksumType = "MD5";
-        apim.ingest(getAtomObject(pid, null), ATOM1_1.uri, null);
+        apim.ingest(TypeUtility.convertBytesToDataHandler(getAtomObject(pid, null)), ATOM1_1.uri, null);
         File temp = null;
 
         try {
@@ -209,7 +213,7 @@ public class TestManagedDatastreams
             try {
                 addDatastream(pid, contentLocation, checksumType, checksum);
                 fail("Adding datastream with bogus checksum should have failed.");
-            } catch (RemoteException e) {
+            } catch (SoapFaultException e) {
                 assertTrue(e.getMessage().contains("Checksum Mismatch"));
             }
         } finally {
@@ -224,7 +228,7 @@ public class TestManagedDatastreams
     public void testModifyDatastreamByReferenceWithChecksum() throws Exception {
         String pid = "file:m_ds_test_add"; // file pid namespace should work as well as demo
         String checksumType = "MD5";
-        apim.ingest(getAtomObject(pid, null), ATOM1_1.uri, null);
+        apim.ingest(TypeUtility.convertBytesToDataHandler(getAtomObject(pid, null)), ATOM1_1.uri, null);
         File temp = null;
         try {
             temp = File.createTempFile("foo", "bar");
@@ -245,7 +249,7 @@ public class TestManagedDatastreams
             try {
                 modifyDatastreamByReference(pid, contentLocation, checksumType, checksum);
                 fail("Modifying datastream with bogus checksum should have failed.");
-            } catch (RemoteException e) {
+            } catch (SoapFaultException e) {
                 assertTrue(e.getMessage().contains("Checksum Mismatch"));
             }
         } finally {
@@ -306,7 +310,7 @@ public class TestManagedDatastreams
             throws Exception {
         return apim.modifyDatastreamByReference(pid,
                                                 "DS",
-                                                new String[]{},
+                                                new ArrayOfString(),
                                                 "testManagedDatastreams",
                                                 "text/plain",
                                                 "",

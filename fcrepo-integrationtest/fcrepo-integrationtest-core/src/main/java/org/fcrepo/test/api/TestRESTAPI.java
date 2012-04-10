@@ -5,6 +5,13 @@
 
 package org.fcrepo.test.api;
 
+import static org.apache.commons.httpclient.HttpStatus.SC_CREATED;
+import static org.apache.commons.httpclient.HttpStatus.SC_INTERNAL_SERVER_ERROR;
+import static org.apache.commons.httpclient.HttpStatus.SC_MOVED_TEMPORARILY;
+import static org.apache.commons.httpclient.HttpStatus.SC_NOT_FOUND;
+import static org.apache.commons.httpclient.HttpStatus.SC_OK;
+import static org.apache.commons.httpclient.HttpStatus.SC_UNAUTHORIZED;
+
 import java.io.ByteArrayInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
@@ -13,12 +20,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.UnsupportedEncodingException;
-
 import java.net.URL;
 import java.net.URLEncoder;
-
 import java.text.SimpleDateFormat;
-
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -36,8 +40,9 @@ import javax.xml.validation.Schema;
 import javax.xml.validation.SchemaFactory;
 import javax.xml.validation.Validator;
 
-import org.apache.axis.types.NonNegativeInteger;
+import junit.framework.TestSuite;
 
+import org.antlr.stringtemplate.StringTemplate;
 import org.apache.commons.httpclient.Header;
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.HttpMethod;
@@ -53,55 +58,29 @@ import org.apache.commons.httpclient.methods.multipart.FilePart;
 import org.apache.commons.httpclient.methods.multipart.MultipartRequestEntity;
 import org.apache.commons.httpclient.methods.multipart.Part;
 import org.apache.commons.httpclient.methods.multipart.StringPart;
-
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-
 import org.custommonkey.xmlunit.Diff;
 import org.custommonkey.xmlunit.NamespaceContext;
 import org.custommonkey.xmlunit.SimpleNamespaceContext;
 import org.custommonkey.xmlunit.XMLUnit;
-
+import org.fcrepo.common.Constants;
+import org.fcrepo.common.Models;
+import org.fcrepo.common.PID;
+import org.fcrepo.server.utilities.TypeUtility;
+import org.fcrepo.test.DemoObjectTestSetup;
+import org.fcrepo.test.FedoraServerTestCase;
 import org.jrdf.graph.Triple;
-
 import org.junit.Test;
-
 import org.trippi.RDFFormat;
 import org.trippi.TripleIterator;
 import org.trippi.TrippiException;
 import org.trippi.io.TripleIteratorFactory;
-
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
 import org.xml.sax.XMLReader;
-
-import org.antlr.stringtemplate.StringTemplate;
-
-import junit.framework.TestSuite;
-
-import org.fcrepo.common.Constants;
-import org.fcrepo.common.Models;
-import org.fcrepo.common.PID;
-
-import org.fcrepo.server.access.FedoraAPIA;
-import org.fcrepo.server.management.FedoraAPIM;
-import org.fcrepo.server.types.gen.Datastream;
-import org.fcrepo.server.types.gen.FieldSearchQuery;
-import org.fcrepo.server.types.gen.FieldSearchResult;
-import org.fcrepo.server.types.gen.MIMETypedStream;
-import org.fcrepo.server.types.gen.ObjectFields;
-
-import org.fcrepo.test.DemoObjectTestSetup;
-import org.fcrepo.test.FedoraServerTestCase;
-
-import static org.apache.commons.httpclient.HttpStatus.SC_CREATED;
-import static org.apache.commons.httpclient.HttpStatus.SC_INTERNAL_SERVER_ERROR;
-import static org.apache.commons.httpclient.HttpStatus.SC_MOVED_TEMPORARILY;
-import static org.apache.commons.httpclient.HttpStatus.SC_NOT_FOUND;
-import static org.apache.commons.httpclient.HttpStatus.SC_OK;
-import static org.apache.commons.httpclient.HttpStatus.SC_UNAUTHORIZED;
 
 /**
  * Tests of the REST API. Tests assume a running instance of Fedora with the
@@ -116,9 +95,9 @@ import static org.apache.commons.httpclient.HttpStatus.SC_UNAUTHORIZED;
 public class TestRESTAPI
         extends FedoraServerTestCase {
 
-    private FedoraAPIA apia;
+    private org.fcrepo.server.access.FedoraAPIAMTOM apia;
 
-    private FedoraAPIM apim;
+    private org.fcrepo.server.management.FedoraAPIMMTOM apim;
 
     // used for determining test configuration
     private static String authAccessProperty = "fedora.authorize.access";
@@ -217,9 +196,8 @@ public class TestRESTAPI
         DEMO_REST = tpl.toString();
         apia = getFedoraClient().getAPIA();
         apim = getFedoraClient().getAPIM();
-        apim.ingest(DEMO_REST.getBytes("UTF-8"),
-                    FOXML1_1.uri,
-                    "ingesting new foxml object");
+        apim.ingest(TypeUtility.convertBytesToDataHandler(DEMO_REST
+                .getBytes("UTF-8")), FOXML1_1.uri, "ingesting new foxml object");
 
     }
 
@@ -817,7 +795,7 @@ public class TestRESTAPI
         response = get(true);
         responseBody = new String(response.getResponseBody(), "UTF-8");
         assertTrue(responseBody.indexOf(DEMO_OWNERID) > 0);
-        
+
         // Delete the demo:REST object (ingested as part of setup)
         url = String.format("/objects/%s", pid.toString());
         assertEquals(SC_UNAUTHORIZED, delete(false).getStatusCode());
@@ -912,15 +890,21 @@ public class TestRESTAPI
 
     public void testValidate() throws Exception {
         String[] resultFields = {"pid"};
-        NonNegativeInteger maxResults = new NonNegativeInteger("" + 1000);
-        FieldSearchQuery query = new FieldSearchQuery(null, "*");
-        FieldSearchResult result =
-                apia.findObjects(resultFields, maxResults, query);
+        java.math.BigInteger maxResults = new java.math.BigInteger("" + 1000);
+        org.fcrepo.server.types.mtom.gen.FieldSearchQuery query =
+                new org.fcrepo.server.types.mtom.gen.FieldSearchQuery();
+        org.fcrepo.server.types.mtom.gen.ObjectFactory factory =
+                new org.fcrepo.server.types.mtom.gen.ObjectFactory();
+        query.setTerms(factory.createFieldSearchQueryTerms("*"));
+        org.fcrepo.server.types.mtom.gen.FieldSearchResult result =
+                apia.findObjects(TypeUtility.convertStringtoAOS(resultFields),
+                                 maxResults,
+                                 query);
 
-        ObjectFields[] fields = result.getResultList();
+        List<org.fcrepo.server.types.mtom.gen.ObjectFields> fields = result.getResultList().getObjectFields();
         String thispid = "";
-        for (ObjectFields objectFields : fields) {
-            thispid = objectFields.getPid();
+        for (org.fcrepo.server.types.mtom.gen.ObjectFields objectFields : fields) {
+            thispid = objectFields.getPid().getValue();
             url =
                     String.format("/objects/%s/validate", URLEncoder.encode(thispid
                             .toString(), "UTF-8"));
@@ -1040,7 +1024,7 @@ public class TestRESTAPI
         url = dsPath + "?format=xml";
         assertEquals(response.getResponseBodyString(), get(true)
                 .getResponseBodyString());
-        Datastream ds = apim.getDatastream(pid.toString(), "BAR", null);
+        org.fcrepo.server.types.mtom.gen.Datastream ds = apim.getDatastream(pid.toString(), "BAR", null);
         assertEquals(ds.getMIMEType(), mimeType);
     }
 
@@ -1110,13 +1094,14 @@ public class TestRESTAPI
                                                      "EXTDS",
                                                      null).getLocation());
         String dcDS =
-                new String(apia.getDatastreamDissemination(pid.toString(),
-                                                           "DC",
-                                                           null).getStream());
+                new String(TypeUtility.convertDataHandlerToBytes(apia
+                        .getDatastreamDissemination(pid.toString(), "DC", null)
+                        .getStream()));
         String extDS =
-                new String(apia.getDatastreamDissemination(pid.toString(),
-                                                           "EXTDS",
-                                                           null).getStream());
+                new String(TypeUtility.convertDataHandlerToBytes(apia
+                        .getDatastreamDissemination(pid.toString(),
+                                                    "EXTDS",
+                                                    null).getStream()));
         assertEquals(dcDS, extDS);
 
         // Update DS1 by reference (X type datastream)
@@ -1147,9 +1132,11 @@ public class TestRESTAPI
         assertEquals(SC_UNAUTHORIZED, put(xmlData, false).getStatusCode());
         assertEquals(SC_OK, put(xmlData, true).getStatusCode());
 
-        MIMETypedStream ds1 =
+        org.fcrepo.server.types.mtom.gen.MIMETypedStream ds1 =
                 apia.getDatastreamDissemination(pid.toString(), "DS1", null);
-        assertXMLEqual(xmlData, new String(ds1.getStream(), "UTF-8"));
+        assertXMLEqual(xmlData,
+                       new String(TypeUtility.convertDataHandlerToBytes(ds1
+                               .getStream()), "UTF-8"));
     }
 
     public void testModifyDatastreamNoContent() throws Exception {
@@ -1161,7 +1148,7 @@ public class TestRESTAPI
         assertEquals(SC_UNAUTHORIZED, put("", false).getStatusCode());
         assertEquals(SC_OK, put("", true).getStatusCode());
 
-        Datastream ds1 = apim.getDatastream(pid.toString(), "DS1", null);
+        org.fcrepo.server.types.mtom.gen.Datastream ds1 = apim.getDatastream(pid.toString(), "DS1", null);
         assertEquals(label, ds1.getLabel());
     }
 
@@ -1173,7 +1160,7 @@ public class TestRESTAPI
         assertEquals(SC_UNAUTHORIZED, put("", false).getStatusCode());
         assertEquals(SC_OK, put("", true).getStatusCode());
 
-        Datastream ds1 = apim.getDatastream(pid.toString(), "DS1", null);
+        org.fcrepo.server.types.mtom.gen.Datastream ds1 = apim.getDatastream(pid.toString(), "DS1", null);
         assertEquals(state, ds1.getState());
     }
 
@@ -1185,7 +1172,7 @@ public class TestRESTAPI
         assertEquals(SC_UNAUTHORIZED, put("", false).getStatusCode());
         assertEquals(SC_OK, put("", true).getStatusCode());
 
-        Datastream ds1 = apim.getDatastream(pid.toString(), "DS1", null);
+        org.fcrepo.server.types.mtom.gen.Datastream ds1 = apim.getDatastream(pid.toString(), "DS1", null);
         assertEquals(versionable, ds1.isVersionable());
     }
 
@@ -1803,7 +1790,6 @@ public class TestRESTAPI
         sb.append("RDF: " + new String(rdf, "UTF-8"));
         TripleIterator it =
                 TripleIteratorFactory.defaultInstance().fromStream(new ByteArrayInputStream(rdf), null,
-
                 RDFFormat.RDF_XML);
 
         boolean found = false;
@@ -1961,7 +1947,6 @@ public class TestRESTAPI
 
         assertTrue("Online Validation failed for " + url + ". Errors: "
                 + errors.toString(), 0 == errors.length());
-
     }
 
     // error handler for validating parsing (see validate(String))
@@ -1975,13 +1960,16 @@ public class TestRESTAPI
             m_errors = errors;
         }
 
+        @Override
         public void warning(SAXParseException e) throws SAXException {
         }
 
+        @Override
         public void error(SAXParseException e) throws SAXException {
             m_errors.append(e.getMessage());
         }
 
+        @Override
         public void fatalError(SAXParseException e) throws SAXException {
             m_errors.append(e.getMessage());
         }

@@ -6,9 +6,10 @@ package org.fcrepo.server.utilities;
 
 import javax.xml.namespace.QName;
 
-import org.apache.axis.AxisFault;
+import org.apache.cxf.binding.soap.SoapFault;
 
 import org.fcrepo.common.FaultException;
+
 import org.fcrepo.server.errors.ServerException;
 import org.fcrepo.server.errors.authorization.AuthzDeniedException;
 import org.fcrepo.server.errors.authorization.AuthzException;
@@ -16,12 +17,13 @@ import org.fcrepo.server.errors.authorization.AuthzOperationalException;
 import org.fcrepo.server.errors.authorization.AuthzPermittedException;
 
 
+
 /**
- * Utility methods for working with Axis.
+ * Utility methods for working with CXF.
  *
  * @author Chris Wilper
  */
-public abstract class AxisUtility {
+public abstract class CXFUtility {
 
     /**
      * The (SOAP[version-specific] spec-dictated) namespace for fault codes. See
@@ -45,14 +47,13 @@ public abstract class AxisUtility {
     public static String SOAP_ULTIMATE_RECEIVER =
             "http://www.w3.org/2003/05/soap-envelope/role/ultimateReceiver";
 
-    public static void throwFault(ServerException se) throws AxisFault {
+    public static void throwFault(ServerException se) throws SoapFault {
         throw getFault(se);
     }
 
-    public static AxisFault getFault(ServerException se) {
-        AxisFault fault = AxisFault.makeFault(se);
+    public static SoapFault getFault(ServerException se) {
         String[] details = se.getDetails();
-
+        String detailString = "";
         if (details.length > 0) {
             StringBuffer buf = new StringBuffer();
             for (String element : details) {
@@ -60,13 +61,13 @@ public abstract class AxisUtility {
                 buf.append(element);
                 buf.append("</detail>\n");
             }
-            fault.setFaultDetailString(buf.toString());
+            detailString = buf.toString();
         }
+        SoapFault fault = new SoapFault(detailString, se, SoapFault.FAULT_CODE_CLIENT);
         return fault;
     }
 
-    public static AxisFault getFault(AuthzException e) {
-        AxisFault fault = AxisFault.makeFault(e);
+    public static SoapFault getFault(AuthzException e) {
         String reason = "";
         if (e instanceof AuthzOperationalException) {
             reason = AuthzOperationalException.BRIEF_DESC;
@@ -75,11 +76,11 @@ public abstract class AxisUtility {
         } else if (e instanceof AuthzPermittedException) {
             reason = AuthzPermittedException.BRIEF_DESC;
         }
-        fault.addFaultDetail(new QName("Authz"), reason);
+        SoapFault fault = new SoapFault(reason, e, new QName("Authz"));
         return fault;
     }
 
-    public static AxisFault getFault(Throwable th) {
+    public static SoapFault getFault(Throwable th) {
         if (th instanceof ServerException) {
             if (th instanceof AuthzException) {
                 return getFault((AuthzException) th);
@@ -88,14 +89,11 @@ public abstract class AxisUtility {
             }
         } else {
             if (th instanceof FaultException){
-                return AxisFault.makeFault((FaultException)th);
+                return new SoapFault(th.toString(), th, SoapFault.FAULT_CODE_CLIENT);
             }
             else {
-                AxisFault fault = AxisFault
-                .makeFault(new Exception("Uncaught exception from Fedora Server",
-                                         th));
-                fault.addFaultDetailString(th.toString());
-                return fault;
+                return new SoapFault(th.toString(), new Exception("Uncaught exception from Fedora Server",
+                                                                  th), SoapFault.FAULT_CODE_CLIENT);
             }
         }
     }

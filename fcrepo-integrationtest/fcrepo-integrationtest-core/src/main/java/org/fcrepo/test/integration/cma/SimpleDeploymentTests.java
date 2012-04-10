@@ -4,25 +4,25 @@
  */
 package org.fcrepo.test.integration.cma;
 
-import org.apache.axis.AxisFault;
+import org.apache.cxf.binding.soap.SoapFault;
 
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.fcrepo.client.FedoraClient;
-import org.fcrepo.server.access.FedoraAPIA;
-import org.fcrepo.server.types.gen.ObjectMethodsDef;
+
+import org.fcrepo.server.access.FedoraAPIAMTOM;
+import org.fcrepo.server.types.mtom.gen.ObjectMethodsDef;
+
 import org.fcrepo.test.FedoraServerTestCase;
-
-
-
-import static org.fcrepo.test.integration.cma.Util.filterMethods;
 
 import static junit.framework.Assert.assertEquals;
 import static junit.framework.Assert.assertNotSame;
 import static junit.framework.Assert.assertTrue;
 import static junit.framework.Assert.fail;
+
+import static org.fcrepo.test.integration.cma.Util.filterMethods;
 
 
 public class SimpleDeploymentTests {
@@ -68,10 +68,10 @@ public class SimpleDeploymentTests {
     /* Assure that listMethods works as advertised */
     @Test
     public void testListMethods() throws Exception {
-        FedoraAPIA apia = m_client.getAPIA();
+        FedoraAPIAMTOM apia = m_client.getAPIA();
         ObjectMethodsDef[] methods;
 
-        methods = filterMethods(apia.listMethods(OBJECT_1_PID, null));
+        methods = filterMethods(apia.listMethods(OBJECT_1_PID, null).toArray(new ObjectMethodsDef[0]));
 
         assertEquals("Wrong number of methods", 2, methods.length);
         assertNotSame("SDeps are not distinct", methods[0]
@@ -116,14 +116,14 @@ public class SimpleDeploymentTests {
         try {
             getDissemination(OBJECT_1_PID, SDEF_1_PID, SDEF_2_METHOD);
             fail("Should not have been able to disseminate");
-        } catch (AxisFault e) {
+        } catch (SoapFault e) {
             /* Expected */
         }
 
         try {
             getDissemination(OBJECT_1_PID, SDEF_2_PID, SDEF_1_METHOD);
             fail("Should not have been able to disseminate");
-        } catch (AxisFault e) {
+        } catch (SoapFault e) {
             /* Expected */
         }
     }

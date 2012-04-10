@@ -15,15 +15,15 @@
 
   <build>
     <resources>
-     <resource>
-       <directory>${basedir}/src/main/resources</directory>
-       <filtering>false</filtering>
-     </resource>
+      <resource>
+        <directory>${basedir}/src/main/resources</directory>
+        <filtering>false</filtering>
+      </resource>
     </resources>
   </build>
-  
+
   <dependencies>
-  
+
     <dependency>
       <groupId>org.fcrepo</groupId>
       <artifactId>fcrepo-server</artifactId>
@@ -49,6 +49,7 @@
       <artifactId>fcrepo-client-admin</artifactId>
       <version>${project.version}</version>
     </dependency>
+
 
     <dependency>
       <groupId>xmlunit</groupId>

@@ -2,12 +2,12 @@
  * detailed in the license directory at the root of the source tree (also
  * available online at http://fedora-commons.org/license/).
  */
+
 package org.fcrepo.test.api;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-
-import org.apache.axis.types.NonNegativeInteger;
 
 import org.custommonkey.xmlunit.NamespaceContext;
 import org.custommonkey.xmlunit.SimpleNamespaceContext;
@@ -15,29 +15,34 @@ import org.custommonkey.xmlunit.XMLUnit;
 
 import org.junit.After;
 
-import org.fcrepo.client.FedoraClient;
-import org.fcrepo.common.Models;
-import org.fcrepo.server.access.FedoraAPIA;
-import org.fcrepo.server.types.gen.ComparisonOperator;
-import org.fcrepo.server.types.gen.Condition;
-import org.fcrepo.server.types.gen.DatastreamDef;
-import org.fcrepo.server.types.gen.FieldSearchQuery;
-import org.fcrepo.server.types.gen.FieldSearchResult;
-import org.fcrepo.server.types.gen.MIMETypedStream;
-import org.fcrepo.server.types.gen.ObjectFields;
-import org.fcrepo.server.types.gen.ObjectMethodsDef;
-import org.fcrepo.server.types.gen.ObjectProfile;
-import org.fcrepo.server.types.gen.Property;
-import org.fcrepo.server.types.gen.RepositoryInfo;
-import org.fcrepo.test.DemoObjectTestSetup;
-import org.fcrepo.test.FedoraServerTestCase;
-
 import junit.framework.Test;
 import junit.framework.TestSuite;
 
+import org.fcrepo.client.FedoraClient;
 
+import org.fcrepo.common.Models;
 
+import org.fcrepo.server.access.FedoraAPIAMTOM;
+import org.fcrepo.server.types.mtom.gen.ComparisonOperator;
+import org.fcrepo.server.types.mtom.gen.Condition;
+import org.fcrepo.server.types.mtom.gen.DatastreamDef;
+import org.fcrepo.server.types.mtom.gen.FieldSearchQuery;
+import org.fcrepo.server.types.mtom.gen.FieldSearchQuery.Conditions;
+import org.fcrepo.server.types.mtom.gen.FieldSearchResult;
+import org.fcrepo.server.types.mtom.gen.FieldSearchResult.ResultList;
+import org.fcrepo.server.types.mtom.gen.GetDissemination.Parameters;
+import org.fcrepo.server.types.mtom.gen.MIMETypedStream;
+import org.fcrepo.server.types.mtom.gen.ObjectFactory;
+import org.fcrepo.server.types.mtom.gen.ObjectFields;
+import org.fcrepo.server.types.mtom.gen.ObjectMethodsDef;
+import org.fcrepo.server.types.mtom.gen.ObjectProfile;
+import org.fcrepo.server.types.mtom.gen.ObjectProfile.ObjModels;
+import org.fcrepo.server.types.mtom.gen.Property;
+import org.fcrepo.server.types.mtom.gen.RepositoryInfo;
+import org.fcrepo.server.utilities.TypeUtility;
 
+import org.fcrepo.test.DemoObjectTestSetup;
+import org.fcrepo.test.FedoraServerTestCase;
 
 /**
  * Test of the Fedora Access Service (API-A). describeRepository findObjects
@@ -50,7 +55,7 @@ import junit.framework.TestSuite;
 public class TestAPIA
         extends FedoraServerTestCase {
 
-    private FedoraAPIA apia;
+    private FedoraAPIAMTOM apia;
 
     public static Test suite() {
         TestSuite suite = new TestSuite("APIA TestSuite");
@@ -66,15 +71,24 @@ public class TestAPIA
     public void testFindObjects() throws Exception {
         // Test that a search for pid=demo:5 returns one result; demo:5
         String[] resultFields = {"pid"};
-        NonNegativeInteger maxResults = new NonNegativeInteger("" + 100);
-        Condition[] condition =
-                {new Condition("pid", ComparisonOperator.eq, "demo:5")};
-        FieldSearchQuery query = new FieldSearchQuery(condition, null);
+        java.math.BigInteger maxResults = new java.math.BigInteger("" + 100);
+        FieldSearchQuery query = new FieldSearchQuery();
+        Conditions conds = new Conditions();
+        Condition cond = new Condition();
+        cond.setOperator(ComparisonOperator.EQ);
+        cond.setProperty("pid");
+        cond.setValue("demo:5");
+        conds.getCondition().add(cond);
+        ObjectFactory factory = new ObjectFactory();
+        query.setConditions(factory.createFieldSearchQueryConditions(conds));
         FieldSearchResult result =
-                apia.findObjects(resultFields, maxResults, query);
-        ObjectFields[] fields = result.getResultList();
-        assertEquals(1, fields.length);
-        assertEquals("demo:5", fields[0].getPid());
+                apia.findObjects(TypeUtility.convertStringtoAOS(resultFields),
+                                 maxResults,
+                                 query);
+        ResultList resultList = result.getResultList();
+        List<ObjectFields> fields = resultList.getObjectFields();
+        assertEquals(1, fields.size());
+        assertEquals("demo:5", fields.get(0).getPid().getValue());
     }
 
     public void testGetDatastreamDissemination() throws Exception {
@@ -82,15 +96,22 @@ public class TestAPIA
 
         // test for type X datastream
         ds = apia.getDatastreamDissemination("demo:5", "DC", null);
-        String xml = new String(ds.getStream(), "UTF-8");
+        byte[] bytes = TypeUtility.convertDataHandlerToBytes(ds.getStream());
+        String xml = new String(bytes, "UTF-8");
         assertXpathExists("/oai_dc:dc", xml);
-        assertXpathEvaluatesTo("demo:5", "/oai_dc:dc/dc:identifier/text( )", xml);
+        assertXpathEvaluatesTo("demo:5",
+                               "/oai_dc:dc/dc:identifier/text( )",
+                               xml);
         assertEquals(ds.getMIMEType(), "text/xml");
 
         // test for type E datastream
-        ds = apia.getDatastreamDissemination("demo:SmileyBeerGlass", "MEDIUM_SIZE", null);
+        ds =
+                apia.getDatastreamDissemination("demo:SmileyBeerGlass",
+                                                "MEDIUM_SIZE",
+                                                null);
+        bytes = TypeUtility.convertDataHandlerToBytes(ds.getStream());
         assertEquals(ds.getMIMEType(), "image/jpeg");
-        assertTrue(ds.getStream().length > 0);
+        assertTrue(bytes.length > 0);
 
         // test for type R datastream
         ds = apia.getDatastreamDissemination("demo:31", "DS3", null);
@@ -98,51 +119,53 @@ public class TestAPIA
 
         // test for type M datastream
         ds = apia.getDatastreamDissemination("demo:5", "THUMBRES_IMG", null);
+        bytes = TypeUtility.convertDataHandlerToBytes(ds.getStream());
         assertEquals(ds.getMIMEType(), "image/jpeg");
-        assertTrue(ds.getStream().length > 0);
+        assertTrue(bytes.length > 0);
     }
 
     public void testGetDisseminationDefault() throws Exception {
         MIMETypedStream diss = null;
-        diss = apia.getDissemination("demo:5",
+        Parameters params = new Parameters();
+        diss =
+                apia.getDissemination("demo:5",
                                       "fedora-system:3",
                                       "viewDublinCore",
-                                      new Property[0],
+                                      params,
                                       null);
         assertEquals(diss.getMIMEType(), "text/html");
-        assertTrue(diss.getStream().length > 0);
+        assertTrue(TypeUtility.convertDataHandlerToBytes(diss.getStream()).length > 0);
     }
 
-// FIXME: This test intermittently fails. See FCREPO-457
-/*
-    public void testGetDisseminationChained() throws Exception {
-        MIMETypedStream diss = null;
-        diss = apia.getDissemination("demo:26",
-                                     "demo:19",
-                                     "getPDF",
-                                     new Property[0],
-                                     null);
-        assertEquals(diss.getMIMEType(), "application/pdf");
-        assertTrue(diss.getStream().length > 0);
-    }
-*/
+    // FIXME: This test intermittently fails. See FCREPO-457
+    /*
+     * public void testGetDisseminationChained() throws Exception {
+     * MIMETypedStream diss = null; diss = apia.getDissemination("demo:26",
+     * "demo:19", "getPDF", new Property[0], null);
+     * assertEquals(diss.getMIMEType(), "application/pdf");
+     * assertTrue(diss.getStream().length > 0); }
+     */
 
     public void testGetDisseminationUserInput() throws Exception {
         MIMETypedStream diss = null;
-        Property[] userInput = new Property[1];
-        userInput[0] = new Property("convertTo", "gif");
-        diss = apia.getDissemination("demo:29",
-                                     "demo:27",
-                                     "convertImage",
-                                     userInput,
-                                     null);
+        Parameters params = new Parameters();
+        Property prop = new Property();
+        prop.setName("convertTo");
+        prop.setValue("gif");
+        params.getParameter().add(prop);
+        diss =
+                apia.getDissemination("demo:29",
+                                      "demo:27",
+                                      "convertImage",
+                                      params,
+                                      null);
         assertEquals(diss.getMIMEType(), "image/gif");
-        assertTrue(diss.getStream().length > 0);
+        assertTrue(TypeUtility.convertDataHandlerToBytes(diss.getStream()).length > 0);
     }
 
     public void testObjectHistory() throws Exception {
-        String[] timestamps = apia.getObjectHistory("demo:5");
-        assertTrue(timestamps.length > 0);
+        List<String> timestamps = apia.getObjectHistory("demo:5");
+        assertTrue(timestamps.size() > 0);
     }
 
     public void testGetObjectProfile() throws Exception {
@@ -153,13 +176,16 @@ public class TestAPIA
     }
 
     public void testGetObjectProfileBasicCModel() throws Exception {
-        for (String pid : new String[] { "demo:SmileyPens",
-                                         "demo:SmileyGreetingCard" }) {
+        for (String pid : new String[] {"demo:SmileyPens",
+                "demo:SmileyGreetingCard"}) {
             ObjectProfile profile = apia.getObjectProfile(pid, null);
             boolean found = false;
-            for (String objModel : profile.getObjModels()) {
-                if (objModel.equals(Models.FEDORA_OBJECT_CURRENT.uri)) {
-                    found = true;
+            ObjModels objModels = profile.getObjModels();
+            if (objModels != null && objModels.getModel() != null) {
+                for (String objModel : objModels.getModel()) {
+                    if (objModel.equals(Models.FEDORA_OBJECT_CURRENT.uri)) {
+                        found = true;
+                    }
                 }
             }
             assertTrue(found);
@@ -167,13 +193,13 @@ public class TestAPIA
     }
 
     public void testListDatastreams() throws Exception {
-        DatastreamDef[] dsDefs = apia.listDatastreams("demo:5", null);
-        assertEquals(6, dsDefs.length);
+        List<DatastreamDef> dsDefs = apia.listDatastreams("demo:5", null);
+        assertEquals(6, dsDefs.size());
     }
 
     public void testListMethods() throws Exception {
-        ObjectMethodsDef[] methodDefs = apia.listMethods("demo:5", null);
-        assertEquals(8, methodDefs.length);
+        List<ObjectMethodsDef> methodDefs = apia.listMethods("demo:5", null);
+        assertEquals(8, methodDefs.size());
     }
 
     @Override
