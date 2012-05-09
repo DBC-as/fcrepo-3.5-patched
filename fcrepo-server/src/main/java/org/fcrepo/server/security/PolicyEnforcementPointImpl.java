@@ -128,7 +128,7 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
             singleton = new PolicyEnforcementPointImpl();
         }
         count++;
-        logger.debug("***another use (" + count + ") of XACMLPep singleton");
+        logger.debug("***another use ({}) of XACMLPep singleton",Integer.toString(count));
         return singleton;
     }
 

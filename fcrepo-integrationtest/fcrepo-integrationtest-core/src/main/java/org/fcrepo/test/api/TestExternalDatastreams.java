@@ -22,6 +22,7 @@ import org.fcrepo.common.PID;
 import org.fcrepo.server.access.FedoraAPIA;
 import org.fcrepo.server.management.FedoraAPIM;
 import org.fcrepo.server.utilities.StringUtility;
+import org.fcrepo.server.utilities.TypeUtility;
 import org.fcrepo.test.FedoraServerTestCase;
 import org.fcrepo.utilities.Foxml11Document;
 import org.fcrepo.utilities.Foxml11Document.ControlGroup;
@@ -291,7 +292,7 @@ public class TestExternalDatastreams
             throws Exception {
         return apim.modifyDatastreamByReference(pid,
                                                 "DS",
-                                                new String[]{},
+                                                TypeUtility.convertStringtoAOS(new String[]{}),
                                                 "testExternalDatastreams",
                                                 "text/plain",
                                                 "",
