@@ -20,7 +20,6 @@ import org.fcrepo.server.errors.authorization.AuthzDeniedException;
 import org.fcrepo.server.errors.authorization.AuthzException;
 import org.fcrepo.server.errors.authorization.AuthzOperationalException;
 import org.fcrepo.server.errors.authorization.AuthzPermittedException;
-import org.fcrepo.server.security.ContextAttributeFinderModule;
 import org.fcrepo.server.security.ContextRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,7 +32,6 @@ import com.sun.xacml.ctx.RequestCtx;
 import com.sun.xacml.ctx.ResponseCtx;
 import com.sun.xacml.ctx.Result;
 import com.sun.xacml.ctx.Subject;
-import com.sun.xacml.finder.AttributeFinderModule;
 
 /**
  * @author Bill Niebel
@@ -314,13 +312,8 @@ public class PolicyEnforcementPoint implements org.fcrepo.server.security.Policy
                         logger.info("request action has " + tempobj.getId() + "="
                                 + tempobj.getValue().toString());
                     }
-                    for (com.sun.xacml.finder.AttributeFinderModule m:(List<AttributeFinderModule>)m_pdpConfig.getAttributeFinder().getModules()){
-                        if (m instanceof ContextAttributeFinderModule){
-                            ContextAttributeFinderModule c = (ContextAttributeFinderModule)m;
-                            logger.info("about to ref contextAttributeFinder=" + c);
-                            m_contexts.registerContext(contextIndex, context);
-                        }
-                    }
+                    m_contexts.registerContext(contextIndex, context);
+
                     long st = System.currentTimeMillis();
                     try {
                         response = pdp.evaluate(request);
@@ -334,12 +327,7 @@ public class PolicyEnforcementPoint implements org.fcrepo.server.security.Policy
                     logger.error("Error evaluating policy", t);
                     throw new AuthzOperationalException("");
                 } finally {
-                    for (com.sun.xacml.finder.AttributeFinderModule m:(List<AttributeFinderModule>)m_pdpConfig.getAttributeFinder().getModules()){
-                        if (m instanceof ContextAttributeFinderModule){
-                            ContextAttributeFinderModule c = (ContextAttributeFinderModule)m;
-                            m_contexts.unregisterContext(contextIndex);
-                        }
-                    }
+                    m_contexts.unregisterContext(contextIndex);
                 }
                 logger.info("in pep, before denyBiasedAuthz() called");
                 if (!denyBiasedAuthz(response.getResults())) {
