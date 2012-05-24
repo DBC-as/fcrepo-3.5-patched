@@ -6,24 +6,11 @@ package org.fcrepo.server.security;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-
 import java.util.Date;
-import java.util.Hashtable;
-import java.util.Iterator;
 import java.util.Map;
 
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.stream.StreamResult;
-import javax.xml.transform.stream.StreamSource;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.fcrepo.common.Constants;
-
 import org.fcrepo.server.Context;
 import org.fcrepo.server.Module;
 import org.fcrepo.server.MultiValueMap;
@@ -34,9 +21,9 @@ import org.fcrepo.server.errors.authorization.AuthzOperationalException;
 import org.fcrepo.server.storage.DOManager;
 import org.fcrepo.server.utilities.status.ServerState;
 import org.fcrepo.server.validation.ValidationUtility;
-
 import org.fcrepo.utilities.DateUtility;
-import org.fcrepo.utilities.XmlTransformUtility;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 
 /**
@@ -118,54 +105,16 @@ public class DefaultAuthorization
     private static final Logger logger =
             LoggerFactory.getLogger(DefaultAuthorization.class);
 
-    private static final String XACML_DIST_BASE = "fedora-internal-use";
-
-    private static final String DEFAULT_REPOSITORY_POLICIES_DIRECTORY =
-            XACML_DIST_BASE
-            + "/fedora-internal-use-repository-policies-approximating-2.0";
-
-    private static final String BE_SECURITY_XML_LOCATION =
-            "config/beSecurity.xml";
-
-    private static final String BACKEND_POLICIES_ACTIVE_DIRECTORY =
-            XACML_DIST_BASE + "/fedora-internal-use-backend-service-policies";
-
-    private static final String BACKEND_POLICIES_XSL_LOCATION =
-            XACML_DIST_BASE + "/build-backend-policy.xsl";
-
-    private static final String REPOSITORY_POLICIES_DIRECTORY_KEY =
-            "REPOSITORY-POLICIES-DIRECTORY";
-
+    // inactive configuration as of 3.5
+    @Deprecated
     private static final String REPOSITORY_POLICY_GUITOOL_DIRECTORY_KEY =
             "REPOSITORY-POLICY-GUITOOL-POLICIES-DIRECTORY";
 
-    private static final String COMBINING_ALGORITHM_KEY = "XACML-COMBINING-ALGORITHM";
-
-    private static final String ENFORCE_MODE_KEY = "ENFORCE-MODE";
-
     private static final String POLICY_SCHEMA_PATH_KEY = "POLICY-SCHEMA-PATH";
-
-    private static final String VALIDATE_REPOSITORY_POLICIES_KEY =
-            "VALIDATE-REPOSITORY-POLICIES";
-
-    private static final String VALIDATE_OBJECT_POLICIES_FROM_DATASTREAM_KEY =
-            "VALIDATE-OBJECT-POLICIES-FROM-DATASTREAM";
-
-    private static final String OWNER_ID_SEPARATOR_KEY = "OWNER-ID-SEPARATOR";
 
     private final PolicyParser m_policyParser;
 
-    private PolicyEnforcementPoint xacmlPep;
-
-    private String repositoryPoliciesActiveDirectory = "";
-
-    private String repositoryPolicyGuitoolDirectory = "";
-
-    private String combiningAlgorithm = "";
-
-    private String enforceMode = "";
-
-    private String ownerIdSeparator = ",";
+    private PolicyEnforcementPoint m_xacmlPep;
 
     boolean enforceListObjectInFieldSearchResults = true;
 
@@ -182,7 +131,7 @@ public class DefaultAuthorization
      * @throws ModuleInitializationException If initilization values are invalid or initialization fails for
      *                                       some other reason.
      */
-    public DefaultAuthorization(Map moduleParameters, Server server, String role)
+    public DefaultAuthorization(Map<String, String> moduleParameters, Server server, String role)
             throws ModuleInitializationException {
         super(moduleParameters, server, role);
         String serverHome = null;
@@ -195,34 +144,12 @@ public class DefaultAuthorization
                                                     e1);
         }
 
-        if (moduleParameters.containsKey(REPOSITORY_POLICIES_DIRECTORY_KEY)) {
-            repositoryPoliciesActiveDirectory =
-                    getParameter(REPOSITORY_POLICIES_DIRECTORY_KEY, true);
-        }
-        if (moduleParameters
-                .containsKey(REPOSITORY_POLICY_GUITOOL_DIRECTORY_KEY)) {
-            repositoryPolicyGuitoolDirectory =
-                    getParameter(REPOSITORY_POLICY_GUITOOL_DIRECTORY_KEY, true);
-        }
-        if (moduleParameters.containsKey(COMBINING_ALGORITHM_KEY)) {
-            combiningAlgorithm =
-                    (String) moduleParameters.get(COMBINING_ALGORITHM_KEY);
-        }
-        if (moduleParameters.containsKey(ENFORCE_MODE_KEY)) {
-            enforceMode = (String) moduleParameters.get(ENFORCE_MODE_KEY);
-        }
-        if (moduleParameters.containsKey(OWNER_ID_SEPARATOR_KEY)) {
-            ownerIdSeparator =
-                    (String) moduleParameters.get(OWNER_ID_SEPARATOR_KEY);
-            logger.debug("ownerIdSeparator is [" + ownerIdSeparator + "]");
-        }
-
         // Initialize the policy parser given the POLICY_SCHEMA_PATH_KEY
         if (moduleParameters.containsKey(POLICY_SCHEMA_PATH_KEY)) {
             String schemaPath =
-                    (((String) moduleParameters.get(POLICY_SCHEMA_PATH_KEY))
+                    (moduleParameters.get(POLICY_SCHEMA_PATH_KEY)
                             .startsWith(File.separator) ? "" : serverHome)
-                    + (String) moduleParameters
+                    + moduleParameters
                             .get(POLICY_SCHEMA_PATH_KEY);
             try {
                 FileInputStream in = new FileInputStream(schemaPath);
@@ -237,148 +164,10 @@ public class DefaultAuthorization
                                                     + " specified.  Must be given as " + POLICY_SCHEMA_PATH_KEY,
                                                     role);
         }
-
-        if (moduleParameters.containsKey(VALIDATE_REPOSITORY_POLICIES_KEY)) {
-            validateRepositoryPolicies =
-                    (new Boolean((String) moduleParameters
-                            .get(VALIDATE_REPOSITORY_POLICIES_KEY)))
-                            .booleanValue();
-        }
-        if (moduleParameters
-                .containsKey(VALIDATE_OBJECT_POLICIES_FROM_DATASTREAM_KEY)) {
-            try {
-                validateObjectPoliciesFromDatastream =
-                        Boolean.parseBoolean((String) moduleParameters
-                                .get(VALIDATE_OBJECT_POLICIES_FROM_DATASTREAM_KEY));
-            } catch (Exception e) {
-                throw new ModuleInitializationException("bad init parm boolean value for "
-                                                        + VALIDATE_OBJECT_POLICIES_FROM_DATASTREAM_KEY,
-                                                        role,
-                                                        e);
-            }
-        }
     }
 
     @Override
     public void initModule() throws ModuleInitializationException {
-    }
-
-    private boolean validateRepositoryPolicies = false;
-
-    private boolean validateObjectPoliciesFromDatastream = false;
-
-    private static boolean mkdir(String dirPath) {
-        boolean createdOnThisCall = false;
-        File directory = new File(dirPath);
-        if (!directory.exists()) {
-            directory.mkdirs();
-            createdOnThisCall = true;
-        }
-        return createdOnThisCall;
-    }
-
-    private static final int BUFFERSIZE = 4096;
-
-    private static void filecopy(String srcPath, String destPath)
-            throws Exception {
-        File srcFile = new File(srcPath);
-        FileInputStream fis = new FileInputStream(srcFile);
-        File destFile = new File(destPath);
-        try {
-            destFile.createNewFile();
-        } catch (Exception e) {
-        }
-        FileOutputStream fos = new FileOutputStream(destFile);
-        byte[] buffer = new byte[BUFFERSIZE];
-        boolean reading = true;
-        while (reading) {
-            int bytesRead = fis.read(buffer);
-            if (bytesRead > 0) {
-                fos.write(buffer, 0, bytesRead);
-            }
-            reading = bytesRead > -1;
-        }
-        fis.close();
-        fos.close();
-    }
-
-    private static void dircopy(String srcPath, String destPath)
-            throws Exception {
-        File srcDir = new File(srcPath);
-        String[] paths = srcDir.list();
-        for (String element : paths) {
-            String absSrcPath = srcPath + File.separator + element;
-            String absDestPath = destPath + File.separator + element;
-            filecopy(absSrcPath, absDestPath);
-        }
-    }
-
-    private static void deldirfiles(String path) throws Exception {
-        File srcDir = new File(path);
-        if (srcDir.exists()) {
-            String[] paths = srcDir.list();
-            for (String element : paths) {
-                String absPath = path + File.separator + element;
-                File f = new File(absPath);
-                f.delete();
-            }
-        } else {
-            srcDir.mkdirs();
-        }
-    }
-
-    private final void generateBackendPolicies() throws Exception {
-        String fedoraHome =
-                ((Module) this).getServer().getHomeDir().getAbsolutePath();
-        deldirfiles(fedoraHome + File.separator
-                    + BACKEND_POLICIES_ACTIVE_DIRECTORY);
-        BackendPolicies backendPolicies =
-                new BackendPolicies(fedoraHome + File.separator
-                                    + BE_SECURITY_XML_LOCATION);
-        Hashtable tempfiles = backendPolicies.generateBackendPolicies();
-        TransformerFactory tfactory = XmlTransformUtility.getTransformerFactory();
-        try {
-            Iterator iterator = tempfiles.keySet().iterator();
-            while (iterator.hasNext()) {
-                File f =
-                        new File(fedoraHome + File.separator
-                                 + BACKEND_POLICIES_XSL_LOCATION); // <<stylesheet
-                // location
-                StreamSource ss = new StreamSource(f);
-                Transformer transformer = tfactory.newTransformer(ss); // xformPath
-                String key = (String) iterator.next();
-                File infile = new File((String) tempfiles.get(key));
-                FileInputStream fis = new FileInputStream(infile);
-                FileOutputStream fos =
-                        new FileOutputStream(fedoraHome + File.separator
-                                             + BACKEND_POLICIES_ACTIVE_DIRECTORY
-                                             + File.separator + key);
-                transformer.transform(new StreamSource(fis),
-                                      new StreamResult(fos));
-            }
-        } finally {
-            // we're done with temp files now, so delete them
-            Iterator iter = tempfiles.keySet().iterator();
-            while (iter.hasNext()) {
-                File tempFile = new File((String) tempfiles.get(iter.next()));
-                tempFile.delete();
-            }
-        }
-    }
-
-    private static final String DEFAULT = "default";
-
-    private void setupActivePolicyDirectories() throws Exception {
-        String fedoraHome =
-                ((Module) this).getServer().getHomeDir().getAbsolutePath();
-        mkdir(repositoryPoliciesActiveDirectory);
-        if (mkdir(repositoryPoliciesActiveDirectory + File.separator + DEFAULT)) {
-            dircopy(fedoraHome + File.separator
-                    + DEFAULT_REPOSITORY_POLICIES_DIRECTORY,
-                    repositoryPoliciesActiveDirectory + File.separator
-                    + DEFAULT);
-        }
-        generateBackendPolicies();
     }
 
     @Override
@@ -394,21 +183,7 @@ public class DefaultAuthorization
             getServer().getStatusFile()
                     .append(ServerState.STARTING,
                             "Initializing XACML Authorization Module");
-            setupActivePolicyDirectories();
-            xacmlPep = getServer().getBean(PolicyEnforcementPoint.class);
-            String fedoraHome =
-                    ((Module) this).getServer().getHomeDir().getAbsolutePath();
-            xacmlPep.initPep(enforceMode,
-                             combiningAlgorithm,
-                             repositoryPoliciesActiveDirectory,
-                             fedoraHome + File.separator
-                             + BACKEND_POLICIES_ACTIVE_DIRECTORY,
-                             repositoryPolicyGuitoolDirectory,
-                             m_manager,
-                             validateRepositoryPolicies,
-                             validateObjectPoliciesFromDatastream,
-                             m_policyParser,
-                             ownerIdSeparator);
+            m_xacmlPep = getServer().getBean(PolicyEnforcementPoint.class);
         } catch (Throwable e1) {
             throw new ModuleInitializationException(e1.getMessage(),
                                                     getRole(),
@@ -419,8 +194,7 @@ public class DefaultAuthorization
     @Override
     public void reloadPolicies(Context context) throws Exception {
         enforceReloadPolicies(context);
-        generateBackendPolicies();
-        xacmlPep.newPdp();
+        m_xacmlPep.newPdp();
     }
 
     private final String extractNamespace(String pid) {
@@ -523,7 +297,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep
+            m_xacmlPep
                     .enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
@@ -564,7 +338,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -611,7 +385,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              "",
@@ -647,7 +421,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -679,7 +453,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -730,7 +504,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep
+            m_xacmlPep
                     .enforce(context
                             .getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
@@ -764,7 +538,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -800,7 +574,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep
+            m_xacmlPep
                     .enforce(context
                             .getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
@@ -837,7 +611,7 @@ public class DefaultAuthorization
             if (enforceListObjectInFieldSearchResults) {
                 context.setActionAttributes(null);
                 context.setResourceAttributes(null);
-                xacmlPep
+                m_xacmlPep
                         .enforce(context
                                 .getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                                  target,
@@ -862,7 +636,7 @@ public class DefaultAuthorization
             if (enforceListObjectInResourceIndexResults) {
                 context.setActionAttributes(null);
                 context.setResourceAttributes(null);
-                xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+                m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                                  target,
                                  Constants.ACTION.APIA.uri,
                                  pid,
@@ -919,7 +693,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -971,7 +745,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -1007,7 +781,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep
+            m_xacmlPep
                     .enforce(context
                             .getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
@@ -1045,7 +819,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -1064,7 +838,7 @@ public class DefaultAuthorization
             String target = Constants.ACTION.PURGE_OBJECT.uri;
             context.setActionAttributes(null);
             context.setResourceAttributes(null);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -1100,7 +874,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -1137,7 +911,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -1174,7 +948,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -1193,7 +967,7 @@ public class DefaultAuthorization
             String target = Constants.ACTION.DESCRIBE_REPOSITORY.uri;
             context.setActionAttributes(null);
             context.setResourceAttributes(null);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIA.uri,
                              "",
@@ -1211,7 +985,7 @@ public class DefaultAuthorization
             String target = Constants.ACTION.FIND_OBJECTS.uri;
             context.setActionAttributes(null);
             context.setResourceAttributes(null);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIA.uri,
                              "",
@@ -1229,7 +1003,7 @@ public class DefaultAuthorization
             String target = Constants.ACTION.RI_FIND_OBJECTS.uri;
             context.setActionAttributes(null);
             context.setResourceAttributes(null);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIA.uri,
                              "",
@@ -1265,7 +1039,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIA.uri,
                              pid,
@@ -1326,7 +1100,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIA.uri,
                              pid,
@@ -1345,7 +1119,7 @@ public class DefaultAuthorization
             String target = Constants.ACTION.GET_OBJECT_HISTORY.uri;
             context.setActionAttributes(null);
             context.setResourceAttributes(null);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIA.uri,
                              pid,
@@ -1376,7 +1150,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIA.uri,
                              pid,
@@ -1407,7 +1181,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIA.uri,
                              pid,
@@ -1437,7 +1211,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIA.uri,
                              pid,
@@ -1455,7 +1229,7 @@ public class DefaultAuthorization
             String target = Constants.ACTION.SERVER_STATUS.uri;
             context.setActionAttributes(null);
             context.setResourceAttributes(null);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              "",
                              "",
@@ -1473,7 +1247,7 @@ public class DefaultAuthorization
             String target = Constants.ACTION.OAI.uri;
             context.setActionAttributes(null);
             context.setResourceAttributes(null);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              "",
                              "",
@@ -1491,7 +1265,7 @@ public class DefaultAuthorization
             String target = Constants.ACTION.UPLOAD.uri;
             context.setActionAttributes(null);
             context.setResourceAttributes(null);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              "",
                              "",
@@ -1524,7 +1298,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIA.uri,
                              "",
@@ -1557,7 +1331,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setActionAttributes(actionAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              "",
                              "",
@@ -1575,7 +1349,7 @@ public class DefaultAuthorization
             String target = Constants.ACTION.RELOAD_POLICIES.uri;
             context.setResourceAttributes(null);
             context.setActionAttributes(null);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              "",
                              "",
@@ -1609,7 +1383,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -1642,7 +1416,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -1675,7 +1449,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,
@@ -1702,7 +1476,7 @@ public class DefaultAuthorization
                 throw new AuthzOperationalException(target + " couldn't be set " + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context
+            m_xacmlPep.enforce(context
                     .getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
@@ -1733,7 +1507,7 @@ public class DefaultAuthorization
                                                     + name, e);
             }
             context.setResourceAttributes(resourceAttributes);
-            xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
+            m_xacmlPep.enforce(context.getSubjectValue(Constants.SUBJECT.LOGIN_ID.uri),
                              target,
                              Constants.ACTION.APIM.uri,
                              pid,

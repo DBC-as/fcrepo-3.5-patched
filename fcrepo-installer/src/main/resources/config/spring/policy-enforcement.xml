@@ -6,14 +6,18 @@
         http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
         http://www.springframework.org/schema/context 
         http://www.springframework.org/schema/context/spring-context-3.0.xsd">
+        <bean id="org.fcrepo.security.ContextRegistry" class="org.fcrepo.server.security.impl.HashtableContextRegistry" />
         <bean id="org.fcrepo.server.security.ContextAttributeFinderModule"
               class="org.fcrepo.server.security.ContextAttributeFinderModule"
-              factory-method="getInstance" autowire-candidate="true">
+              autowire-candidate="true">
+              <constructor-arg><ref bean="org.fcrepo.security.ContextRegistry" /></constructor-arg>
         </bean>
         <bean id="org.fcrepo.server.security.ResourceAttributeFinderModule"
               class="org.fcrepo.server.security.ResourceAttributeFinderModule"
               factory-method="getInstance" autowire-candidate="true">
-              <property name="ownerIdSeparator" value="," />
+              <property name="legacyConfiguration">
+                <ref bean="org.fcrepo.server.security.AuthorizationConfiguration" />
+              </property>
               <property name="DOManager">
                   <ref bean="org.fcrepo.server.storage.DOManager" />
               </property>
@@ -45,21 +49,38 @@
               </property>
         </bean>
          -->
-        <bean id="org.fcrepo.server.security.PolicyEnforcementPoint"
-              class="org.fcrepo.server.security.PolicyEnforcementPointImpl"
-              factory-method="getInstance" autowire-candidate="true">
-              <property name="attributeFinderModules">
-                  <list>
-                      <ref bean="org.fcrepo.server.security.ResourceAttributeFinderModule" />
-                      <ref bean="org.fcrepo.server.security.ContextAttributeFinderModule" />
+         
+         <bean id="org.fcrepo.server.security.PDPConfigurationFactory"
+               class="org.fcrepo.server.security.impl.LegacyPDPConfigurationFactory">
+             <constructor-arg><ref bean="org.fcrepo.server.Server" /></constructor-arg>
+             <constructor-arg><ref bean="org.fcrepo.server.storage.DOManager" /></constructor-arg>
+             <constructor-arg><ref bean="org.fcrepo.server.security.AuthorizationConfiguration" /></constructor-arg>
+             <property name="attributeFinderModules">
+                 <list>
+                     <ref bean="org.fcrepo.server.security.ResourceAttributeFinderModule" />
+                     <ref bean="org.fcrepo.server.security.ContextAttributeFinderModule" />
         <!-- Uncomment the bean below to enable the use of relationship index triples in XACML policies -->
         <!--
-                      <ref bean="org.fcrepo.server.security.xacml.pdp.finder.attribute.RITriplesAttributeFinder" />
+                     <ref bean="org.fcrepo.server.security.xacml.pdp.finder.attribute.RITriplesAttributeFinder" />
         -->       
         <!-- TESTONLY
-                      <ref bean="org.fcrepo.server.security.TestAttributeFinderModule" />
+                     <ref bean="org.fcrepo.server.security.TestAttributeFinderModule" />
         /TESTONLY -->       
-                  </list>
+                 </list>
+             </property>
+         </bean>
+         
+        <bean id="org.fcrepo.server.security.PolicyEnforcementPoint"
+              class="org.fcrepo.server.security.impl.PolicyEnforcementPoint"
+              factory-method="getInstance" autowire-candidate="true">
+              <property name="contextRegistry">
+                <ref bean="org.fcrepo.security.ContextRegistry" />
+              </property>
+              <property name="PDPConfig">
+                <bean factory-bean="org.fcrepo.server.security.PDPConfigurationFactory" factory-method="getDefaultPDPConfig" />
+              </property>
+              <property name="legacyConfiguration">
+                <ref bean="org.fcrepo.server.security.AuthorizationConfiguration" />
               </property>
         </bean>
 </beans>

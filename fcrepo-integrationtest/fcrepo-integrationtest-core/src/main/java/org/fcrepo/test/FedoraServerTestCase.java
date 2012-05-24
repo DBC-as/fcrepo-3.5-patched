@@ -7,25 +7,19 @@ package org.fcrepo.test;
 import java.io.File;
 import java.io.InputStream;
 import java.io.PrintStream;
-
 import java.util.Set;
 
 import org.custommonkey.xmlunit.XMLUnit;
-
-import org.w3c.dom.Document;
-
-import org.xml.sax.InputSource;
-
 import org.fcrepo.client.FedoraClient;
 import org.fcrepo.client.search.SearchResultParser;
 import org.fcrepo.client.utility.AutoPurger;
 import org.fcrepo.client.utility.ingest.Ingest;
 import org.fcrepo.client.utility.ingest.IngestCounter;
-
 import org.fcrepo.common.Constants;
-
 import org.fcrepo.server.access.FedoraAPIAMTOM;
 import org.fcrepo.server.management.FedoraAPIMMTOM;
+import org.w3c.dom.Document;
+import org.xml.sax.InputSource;
 
 
 /**
@@ -82,7 +76,7 @@ public abstract class FedoraServerTestCase
     public static void ingestDemoObjects() throws Exception {
         ingestDemoObjects("/");
     }
-    
+
     public static void ingestDemoObjects(FedoraAPIAMTOM apia, FedoraAPIMMTOM apim) throws Exception {
         ingestDemoObjects("/", apia, apim);
     }
@@ -114,24 +108,24 @@ public abstract class FedoraServerTestCase
 
         File dir = null;
 
-        String specificPath = File.separator + path;
+        String specificPath = (File.separator.equals(path))? path : File.separator + path;
 
         String ingestFormat;
         if (testingMETS()) {
-            System.out.println("Ingesting demo objects in METS format from " + specificPath);
             dir = new File(FEDORA_HOME, "client/demo/mets" + specificPath);
+            System.out.println("Ingesting demo objects in METS format from " + dir.getPath());
             ingestFormat = METS_EXT1_1.uri;
         } else if (testingAtom()) {
-            System.out.println("Ingesting demo objects in Atom format from " + specificPath);
             dir = new File(FEDORA_HOME, "client/demo/atom" + specificPath);
+            System.out.println("Ingesting demo objects in Atom format from " + dir.getPath());
             ingestFormat = ATOM1_1.uri;
         } else if (testingAtomZip()) {
-            System.out.println("Ingesting all demo objects in Atom Zip format from " + specificPath);
             dir = new File(FEDORA_HOME, "client/demo/atom-zip" + specificPath);
+            System.out.println("Ingesting all demo objects in Atom Zip format from " + dir.getPath());
             ingestFormat = ATOM_ZIP1_1.uri;
         } else {
-            System.out.println("Ingesting demo objects in FOXML format from " + specificPath);
             dir = new File(FEDORA_HOME, "client/demo/foxml" + specificPath);
+            System.out.println("Ingesting demo objects in FOXML format from " + dir.getPath());
             ingestFormat = FOXML1_1.uri;
         }
 
@@ -176,7 +170,7 @@ public abstract class FedoraServerTestCase
         FedoraAPIMMTOM apim = client.getAPIMMTOM();
         purgeDemoObjects(apim);
     }
-    
+
     public static void purgeDemoObjects(FedoraAPIMMTOM apim) throws Exception {
         for (String pid : getDemoObjects()) {
             AutoPurger.purge(apim, pid, null);

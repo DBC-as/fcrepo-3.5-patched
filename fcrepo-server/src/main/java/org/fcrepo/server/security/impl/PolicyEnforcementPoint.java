@@ -2,7 +2,7 @@
  * detailed in the license directory at the root of the source tree (also
  * available online at http://fedora-commons.org/license/).
  */
-package org.fcrepo.server.security;
+package org.fcrepo.server.security.impl;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -10,16 +10,18 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.fcrepo.common.Constants;
 import org.fcrepo.server.Context;
+import org.fcrepo.server.config.ModuleConfiguration;
 import org.fcrepo.server.errors.authorization.AuthzDeniedException;
 import org.fcrepo.server.errors.authorization.AuthzException;
 import org.fcrepo.server.errors.authorization.AuthzOperationalException;
 import org.fcrepo.server.errors.authorization.AuthzPermittedException;
-import org.fcrepo.server.security.impl.AccumulatingPolicyStrategy;
-import org.fcrepo.server.storage.DOManager;
+import org.fcrepo.server.security.ContextAttributeFinderModule;
+import org.fcrepo.server.security.ContextRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,42 +33,23 @@ import com.sun.xacml.ctx.RequestCtx;
 import com.sun.xacml.ctx.ResponseCtx;
 import com.sun.xacml.ctx.Result;
 import com.sun.xacml.ctx.Subject;
-import com.sun.xacml.finder.AttributeFinder;
-import com.sun.xacml.finder.PolicyFinder;
+import com.sun.xacml.finder.AttributeFinderModule;
 
 /**
  * @author Bill Niebel
  */
-public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
+public class PolicyEnforcementPoint implements org.fcrepo.server.security.PolicyEnforcementPoint {
 
     private static final Logger logger =
-            LoggerFactory.getLogger(PolicyEnforcementPointImpl.class);
+            LoggerFactory.getLogger(PolicyEnforcementPoint.class);
 
-    public static final String SUBACTION_SEPARATOR = "//";
-
-    public static final String SUBRESOURCE_SEPARATOR = "//";
-
-    private static PolicyEnforcementPointImpl singleton = null;
+    private static PolicyEnforcementPoint singleton = null;
 
     private static int count = 0;
 
-    private String enforceMode = ENFORCE_MODE_ENFORCE_POLICIES;
+    private static final String ENFORCE_MODE_KEY = "ENFORCE-MODE";
 
-    static final String ENFORCE_MODE_ENFORCE_POLICIES = "enforce-policies";
-
-    static final String ENFORCE_MODE_PERMIT_ALL_REQUESTS =
-            "permit-all-requests";
-
-    static final String ENFORCE_MODE_DENY_ALL_REQUESTS = "deny-all-requests";
-
-    public static final String XACML_SUBJECT_ID =
-            "urn:oasis:names:tc:xacml:1.0:subject:subject-id";
-
-    public static final String XACML_ACTION_ID =
-            "urn:oasis:names:tc:xacml:1.0:action:action-id";
-
-    public static final String XACML_RESOURCE_ID =
-            "urn:oasis:names:tc:xacml:1.0:resource:resource-id";
+    private String m_enforceMode = ENFORCE_MODE_ENFORCE_POLICIES;
 
     private final URI XACML_SUBJECT_ID_URI;
 
@@ -86,7 +69,7 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
 
     private final URI RESOURCE_NAMESPACE_URI;
 
-    private PolicyEnforcementPointImpl() {
+    private PolicyEnforcementPoint() {
 
         URI xacmlSubjectIdUri = null;
         URI xacmlActionIdUri = null;
@@ -123,9 +106,15 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
         }
     }
 
-    public static final PolicyEnforcementPointImpl getInstance() {
+    @Override
+    public void setEnforceMode(String enforceMode) {
+        m_enforceMode = enforceMode;
+        logger.info("Set enforce mode to \"{}\"", enforceMode);
+    }
+
+    public static final PolicyEnforcementPoint getInstance() {
         if (singleton == null) {
-            singleton = new PolicyEnforcementPointImpl();
+            singleton = new PolicyEnforcementPoint();
         }
         count++;
         logger.debug("***another use ({}) of XACMLPep singleton",Integer.toString(count));
@@ -135,7 +124,11 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
     /**
      * xacml pdp
      */
+    private PDPConfig m_pdpConfig;
+
     private PDP pdp = null;
+
+    private ContextRegistry m_contexts;
 
     /**
      * available during init(); keep as logging hook
@@ -150,95 +143,19 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
     }
 
     @Override
-    public final void newPdp() throws Exception {
-        AttributeFinder attrFinder = new AttributeFinder();
+    public final void newPdp() {
 
-        attrFinder.setModules(m_attrFinderModules);
-        logger.debug("before building policy finder");
-
-        PolicyFinder policyFinder = new PolicyFinder();
-
-        Set<com.sun.xacml.finder.PolicyFinderModule> policyModules =
-                new HashSet<com.sun.xacml.finder.PolicyFinderModule>();
-        PolicyFinderModule combinedPolicyModule = null;
-        combinedPolicyModule =
-                new PolicyFinderModule(combiningAlgorithm,
-                                       globalPolicyConfig,
-                                       globalBackendPolicyConfig,
-                                       globalPolicyGuiToolConfig,
-                                       validateRepositoryPolicies,
-                                       validateObjectPoliciesFromDatastream,
-                                       policyParser,
-                                       policyStrategy);
-
-        logger.debug("after constucting fedora policy finder module");
-        logger.debug("before adding fedora policy finder module to policy finder hashset");
-        policyModules.add(combinedPolicyModule);
-        logger.debug("after adding fedora policy finder module to policy finder hashset");
-        logger.debug("o before setting policy finder hashset into policy finder");
-        policyFinder.setModules(policyModules);
-        logger.debug("o after setting policy finder hashset into policy finder");
-
-        PDP pdp = new PDP(new PDPConfig(attrFinder, policyFinder, null));
+        PDP pdp = new PDP(m_pdpConfig);
         synchronized (this) {
             this.pdp = pdp;
             //so enforce() will wait, if this pdp update is in progress
         }
     }
 
-    String combiningAlgorithm = null;
-
-    String globalPolicyConfig = null;
-
-    String globalBackendPolicyConfig = null;
-
-    String globalPolicyGuiToolConfig = null;
-
-    DOManager manager = null;
-
-    boolean validateRepositoryPolicies = false;
-
-    boolean validateObjectPoliciesFromDatastream = false;
-
-    PolicyParser policyParser;
-
-    String ownerIdSeparator = ",";
-
-    PolicyStrategy policyStrategy;
-
     @Override
-    public void initPep(String enforceMode,
-                        String combiningAlgorithm,
-                        String globalPolicyConfig,
-                        String globalBackendPolicyConfig,
-                        String globalPolicyGuiToolConfig,
-                        DOManager manager,
-                        boolean validateRepositoryPolicies,
-                        boolean validateObjectPoliciesFromDatastream,
-                        PolicyParser policyParser,
-                        String ownerIdSeparator) throws Exception {
-        logger.debug("in initPep()");
+    public void setPDPConfig(PDPConfig pdpConfig) {
         destroy();
-        this.policyParser = policyParser;
-        this.enforceMode = enforceMode;
-        if (ENFORCE_MODE_ENFORCE_POLICIES.equals(enforceMode)) {
-        } else if (ENFORCE_MODE_PERMIT_ALL_REQUESTS.equals(enforceMode)) {
-        } else if (ENFORCE_MODE_DENY_ALL_REQUESTS.equals(enforceMode)) {
-        } else {
-            throw new AuthzOperationalException("invalid enforceMode from config");
-        }
-        this.combiningAlgorithm = combiningAlgorithm;
-        this.globalPolicyConfig = globalPolicyConfig;
-        this.globalBackendPolicyConfig = globalBackendPolicyConfig;
-        this.globalPolicyGuiToolConfig = globalPolicyGuiToolConfig;
-        this.manager = manager;
-        this.validateRepositoryPolicies = validateRepositoryPolicies;
-        this.validateObjectPoliciesFromDatastream =
-                validateObjectPoliciesFromDatastream;
-        this.ownerIdSeparator = ownerIdSeparator;
-        if (this.policyStrategy == null){
-            this.policyStrategy = new AccumulatingPolicyStrategy(manager);
-        }
+        m_pdpConfig = pdpConfig;
         newPdp();
     }
 
@@ -252,11 +169,18 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
         pdp = null;
     }
 
-    public void setPolicyStrategy(PolicyStrategy policyStrategy) {
-        this.policyStrategy = policyStrategy;
+    public void setLegacyConfiguration(ModuleConfiguration authorizationConfig) {
+        Map<String, String> moduleParameters = authorizationConfig.getParameters();
+        if (moduleParameters.containsKey(ENFORCE_MODE_KEY)) {
+            setEnforceMode(moduleParameters.get(ENFORCE_MODE_KEY));
+        }
     }
 
-    private final Set wrapSubjects(String subjectLoginId) {
+    public void setContextRegistry(ContextRegistry contexts) {
+        m_contexts = contexts;
+    }
+
+    private final Set<Subject> wrapSubjects(String subjectLoginId) {
         logger.debug("wrapSubjectIdAsSubjects(): " + subjectLoginId);
         StringAttribute stringAttribute = new StringAttribute("");
         Attribute subjectAttribute =
@@ -283,7 +207,7 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
         return subjects;
     }
 
-    private final Set wrapActions(String actionId,
+    private final Set<Attribute> wrapActions(String actionId,
                                   String actionApi,
                                   String contextIndex) {
         Set<Attribute> actions = new HashSet<Attribute>();
@@ -314,7 +238,7 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
         return actions;
     }
 
-    private final Set wrapResources(String pid, String namespace)
+    private final Set<Attribute> wrapResources(String pid, String namespace)
             throws AuthzOperationalException {
         Set<Attribute> resources = new HashSet<Attribute>();
         Attribute attribute = null;
@@ -360,41 +284,41 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
             synchronized (this) {
                 //wait, if pdp update is in progress
             }
-            if (ENFORCE_MODE_PERMIT_ALL_REQUESTS.equals(enforceMode)) {
-                logger.debug("permitting request because enforceMode==ENFORCE_MODE_PERMIT_ALL_REQUESTS");
-            } else if (ENFORCE_MODE_DENY_ALL_REQUESTS.equals(enforceMode)) {
-                logger.debug("denying request because enforceMode==ENFORCE_MODE_DENY_ALL_REQUESTS");
+            if (ENFORCE_MODE_PERMIT_ALL_REQUESTS.equals(m_enforceMode)) {
+                logger.info("permitting request because enforceMode==ENFORCE_MODE_PERMIT_ALL_REQUESTS");
+            } else if (ENFORCE_MODE_DENY_ALL_REQUESTS.equals(m_enforceMode)) {
+                logger.info("denying request because enforceMode==ENFORCE_MODE_DENY_ALL_REQUESTS");
                 throw new AuthzDeniedException("all requests are currently denied");
-            } else if (!ENFORCE_MODE_ENFORCE_POLICIES.equals(enforceMode)) {
-                logger.debug("denying request because enforceMode is invalid");
+            } else if (!ENFORCE_MODE_ENFORCE_POLICIES.equals(m_enforceMode)) {
+                logger.info("denying request because enforceMode is invalid");
                 throw new AuthzOperationalException("invalid enforceMode from config");
             } else {
                 ResponseCtx response = null;
                 String contextIndex = null;
                 try {
                     contextIndex = (new Integer(next())).toString();
-                    logger.debug("context index set=" + contextIndex);
-                    Set subjects = wrapSubjects(subjectId);
-                    Set actions = wrapActions(action, api, contextIndex);
-                    Set resources = wrapResources(pid, namespace);
+                    logger.info("context index set=" + contextIndex);
+                    Set<Subject> subjects = wrapSubjects(subjectId);
+                    Set<Attribute> actions = wrapActions(action, api, contextIndex);
+                    Set<Attribute> resources = wrapResources(pid, namespace);
 
                     RequestCtx request =
                             new RequestCtx(subjects,
                                            resources,
                                            actions,
                                            NULL_SET);
-                    Set tempset = request.getAction();
-                    Iterator tempit = tempset.iterator();
+                    Set<Attribute> tempset = request.getAction();
+                    Iterator<Attribute> tempit = tempset.iterator();
                     while (tempit.hasNext()) {
-                        Attribute tempobj = (Attribute) tempit.next();
-                        logger.debug("request action has " + tempobj.getId() + "="
+                        Attribute tempobj = tempit.next();
+                        logger.info("request action has " + tempobj.getId() + "="
                                 + tempobj.getValue().toString());
                     }
-                    for (com.sun.xacml.finder.AttributeFinderModule m:m_attrFinderModules){
+                    for (com.sun.xacml.finder.AttributeFinderModule m:(List<AttributeFinderModule>)m_pdpConfig.getAttributeFinder().getModules()){
                         if (m instanceof ContextAttributeFinderModule){
                             ContextAttributeFinderModule c = (ContextAttributeFinderModule)m;
-                            logger.debug("about to ref contextAttributeFinder=" + c);
-                            c.registerContext(contextIndex, context);
+                            logger.info("about to ref contextAttributeFinder=" + c);
+                            m_contexts.registerContext(contextIndex, context);
                         }
                     }
                     long st = System.currentTimeMillis();
@@ -405,19 +329,19 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
                         logger.debug("Policy evaluation took " + dur + "ms.");
                     }
 
-                    logger.debug("in pep, after evaluate() called");
+                    logger.info("in pep, after evaluate() called");
                 } catch (Throwable t) {
                     logger.error("Error evaluating policy", t);
                     throw new AuthzOperationalException("");
                 } finally {
-                    for (com.sun.xacml.finder.AttributeFinderModule m:m_attrFinderModules){
+                    for (com.sun.xacml.finder.AttributeFinderModule m:(List<AttributeFinderModule>)m_pdpConfig.getAttributeFinder().getModules()){
                         if (m instanceof ContextAttributeFinderModule){
                             ContextAttributeFinderModule c = (ContextAttributeFinderModule)m;
-                            c.unregisterContext(contextIndex);
+                            m_contexts.unregisterContext(contextIndex);
                         }
                     }
                 }
-                logger.debug("in pep, before denyBiasedAuthz() called");
+                logger.info("in pep, before denyBiasedAuthz() called");
                 if (!denyBiasedAuthz(response.getResults())) {
                     throw new AuthzDeniedException("");
                 }
@@ -427,7 +351,7 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
             }
         } finally {
             long dur = System.currentTimeMillis() - enforceStartTime;
-            logger.debug("Policy enforcement took " + dur + "ms.");
+            logger.info("Policy enforcement took " + dur + "ms.");
         }
     }
 
@@ -459,7 +383,7 @@ public class PolicyEnforcementPointImpl implements PolicyEnforcementPoint {
                     break;
             }
         }
-        logger.debug("AUTHZ:  permits=" + nPermits + " denies=" + nDenies
+        logger.info("AUTHZ:  permits=" + nPermits + " denies=" + nDenies
                 + " indeterminates=" + nIndeterminates + " notApplicables="
                 + nNotApplicables + " unexpecteds=" + nWrongs);
         return nPermits >= 1 && nDenies == 0 && nIndeterminates == 0

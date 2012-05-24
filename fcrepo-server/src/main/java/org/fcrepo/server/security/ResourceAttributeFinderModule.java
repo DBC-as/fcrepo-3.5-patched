@@ -6,19 +6,15 @@ package org.fcrepo.server.security;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-
 import java.util.Date;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
-
-import com.sun.xacml.EvaluationCtx;
-import com.sun.xacml.attr.AttributeDesignator;
-import com.sun.xacml.attr.StringAttribute;
-import com.sun.xacml.cond.EvaluationResult;
 
 import org.fcrepo.common.Constants;
 import org.fcrepo.server.ReadOnlyContext;
 import org.fcrepo.server.Server;
+import org.fcrepo.server.config.ModuleConfiguration;
 import org.fcrepo.server.errors.ServerException;
 import org.fcrepo.server.storage.DOManager;
 import org.fcrepo.server.storage.DOReader;
@@ -27,14 +23,21 @@ import org.fcrepo.utilities.DateUtility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.sun.xacml.EvaluationCtx;
+import com.sun.xacml.attr.AttributeDesignator;
+import com.sun.xacml.attr.StringAttribute;
+import com.sun.xacml.cond.EvaluationResult;
+
 /**
  * @author Bill Niebel
  */
-class ResourceAttributeFinderModule
+public class ResourceAttributeFinderModule
         extends AttributeFinderModule {
 
     private static final Logger logger =
             LoggerFactory.getLogger(ResourceAttributeFinderModule.class);
+
+    private static final String OWNER_ID_SEPARATOR_KEY = "OWNER-ID-SEPARATOR";
 
     @Override
     protected boolean canHandleAdhoc() {
@@ -105,6 +108,13 @@ class ResourceAttributeFinderModule
         this.ownerIdSeparator = ownerIdSeparator;
         logger.debug("resourceAttributeFinder just set ownerIdSeparator ==["
                 + this.ownerIdSeparator + "]");
+    }
+
+    public void setLegacyConfiguration(ModuleConfiguration authorizationConfig) {
+        Map<String, String> moduleParameters = authorizationConfig.getParameters();
+        if (moduleParameters.containsKey(OWNER_ID_SEPARATOR_KEY)) {
+            setOwnerIdSeparator(moduleParameters.get(OWNER_ID_SEPARATOR_KEY));
+        }
     }
 
     private final String getDatastreamId(EvaluationCtx context) {

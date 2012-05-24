@@ -19,6 +19,7 @@
           <constructor-arg ref="PolicyCombiningAlgorithm" />
     </bean>
   </util:set>
+  
   <util:list id="attributeFinderModules">
     <bean id="CurrentEnvModule" class="com.sun.xacml.finder.impl.CurrentEnvModule"/>
     <bean id="SelectorModule" class="com.sun.xacml.finder.impl.SelectorModule"/>
@@ -26,7 +27,8 @@
   </util:list>
   <util:list id="resourceFinderModules">
   </util:list>
-  <bean id="PDPConfigurationFactory" class="org.fcrepo.server.security.PDPConfigurationFactory" />
+  
+  <bean id="PDPConfigurationFactory" class="org.fcrepo.server.security.impl.PDPConfigurationFactory" />
   
   <bean id="MelcoePDPConfig" factory-bean="PDPConfigurationFactory" factory-method="getPDPConfig">
     <constructor-arg ref="attributeFinderModules" />

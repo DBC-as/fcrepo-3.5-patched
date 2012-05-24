@@ -7,8 +7,18 @@
         http://www.springframework.org/schema/context 
         http://www.springframework.org/schema/context/spring-context-3.0.xsd">
 
-        <bean id="org.fcrepo.server.security.Authorization"
-              class="org.fcrepo.server.security.xacml.pep.module.FESLAuthorization"
-              autowire-candidate="true">
-        </bean>
+    <bean id="org.fcrepo.server.security.PolicyEnforcementPoint"
+          class="org.fcrepo.server.security.impl.PolicyEnforcementPoint"
+          factory-method="getInstance" autowire-candidate="true">
+        <property name="PDPConfig">
+            <ref bean="MelcoePDPConfig" />
+        </property>
+    </bean>
+
+    <bean id="org.fcrepo.server.security.Authorization"
+          class="org.fcrepo.server.security.xacml.pep.impl.FESLAuthorization"
+          autowire-candidate="true">
+          <constructor-arg><ref bean="org.fcrepo.server.security.PolicyEnforcementPoint" /></constructor-arg>
+    </bean>
+    
 </beans>

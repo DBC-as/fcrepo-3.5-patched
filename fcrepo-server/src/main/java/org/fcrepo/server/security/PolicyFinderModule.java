@@ -6,19 +6,26 @@ package org.fcrepo.server.security;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.FileOutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Hashtable;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
 
 import org.fcrepo.common.Constants;
 import org.fcrepo.common.FaultException;
 import org.fcrepo.server.errors.GeneralException;
-import org.fcrepo.server.errors.ValidationException;
+import org.fcrepo.utilities.FileUtils;
+import org.fcrepo.utilities.XmlTransformUtility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +53,23 @@ public class PolicyFinderModule
     private static final Logger logger =
             LoggerFactory.getLogger(PolicyFinderModule.class);
 
+    private static final String XACML_DIST_BASE = "fedora-internal-use";
+
+    private static final String DEFAULT = "default";
+
+    private static final String DEFAULT_REPOSITORY_POLICIES_DIRECTORY =
+            XACML_DIST_BASE
+            + "/fedora-internal-use-repository-policies-approximating-2.0";
+
+    private static final String BE_SECURITY_XML_LOCATION =
+            "config/beSecurity.xml";
+
+    private static final String BACKEND_POLICIES_ACTIVE_DIRECTORY =
+            XACML_DIST_BASE + "/fedora-internal-use-backend-service-policies";
+
+    private static final String BACKEND_POLICIES_XSL_LOCATION =
+            XACML_DIST_BASE + "/build-backend-policy.xsl";
+
     private static final List<String> ERROR_CODE_LIST = new ArrayList<String>(1);
 
     static {
@@ -54,7 +78,15 @@ public class PolicyFinderModule
 
     private final String m_combiningAlgorithm;
 
-//    private final RepositoryReader m_repoReader;
+    private final String m_defaultRepositoryPoliciesDirectoryPath;
+
+    private final String m_repositoryBackendPolicyDirectoryPath;
+
+    private final String m_repositoryPolicyDirectoryPath;
+
+    private final String m_repositoryBackendXSLLocation;
+
+    private final String m_repositoryBackendSecurityXMLLocation;
 
     private final boolean m_validateRepositoryPolicies;
 
@@ -64,12 +96,11 @@ public class PolicyFinderModule
 
     private final PolicyStrategy m_policyStrategy;
 
-    private final Collection<AbstractPolicy> m_repositoryPolicies;
+    private Collection<AbstractPolicy> m_repositoryPolicies;
 
     public PolicyFinderModule(String combiningAlgorithm,
+                              String serverHome,
                               String repositoryPolicyDirectoryPath,
-                              String repositoryBackendPolicyDirectoryPath,
-                              String repositoryPolicyGuiToolDirectoryPath,
                               boolean validateRepositoryPolicies,
                               boolean validateObjectPoliciesFromDatastream,
                               PolicyParser policyParser,
@@ -77,25 +108,24 @@ public class PolicyFinderModule
             throws GeneralException {
 
         m_combiningAlgorithm = combiningAlgorithm;
-//        m_repoReader = repoReader;
+        m_repositoryPolicyDirectoryPath = repositoryPolicyDirectoryPath;
+
+        m_repositoryBackendPolicyDirectoryPath = serverHome + File.separator
+                + BACKEND_POLICIES_ACTIVE_DIRECTORY;
+
+        m_repositoryBackendXSLLocation = serverHome + File.separator
+                + BACKEND_POLICIES_XSL_LOCATION;
+
+        m_repositoryBackendSecurityXMLLocation = serverHome + File.separator
+                + BE_SECURITY_XML_LOCATION;
+
+        m_defaultRepositoryPoliciesDirectoryPath = serverHome + File.separator
+                + DEFAULT_REPOSITORY_POLICIES_DIRECTORY;
+
         m_validateRepositoryPolicies = validateRepositoryPolicies;
         m_validateObjectPoliciesFromDatastream = validateObjectPoliciesFromDatastream;
         m_policyParser = policyParser;
         m_policyStrategy = policyStrategy;
-        logger.info("Loading repository policies...");
-        try {
-            Map<String,AbstractPolicy> repositoryPolicies =
-                    m_policyStrategy.loadPolicies(m_policyParser,
-                    m_validateRepositoryPolicies,
-                    new File(repositoryBackendPolicyDirectoryPath));
-            repositoryPolicies.putAll(
-                    m_policyStrategy.loadPolicies(m_policyParser,
-                                 m_validateRepositoryPolicies,
-                                 new File(repositoryPolicyDirectoryPath)));
-            m_repositoryPolicies = repositoryPolicies.values();
-        } catch (Exception e) {
-            throw new GeneralException("Error loading repository policies", e);
-        }
     }
 
     /**
@@ -103,6 +133,22 @@ public class PolicyFinderModule
      */
     @Override
     public void init(PolicyFinder finder) {
+        logger.info("Loading repository policies...");
+        try {
+            setupActivePolicyDirectories();
+            Map<String,AbstractPolicy> repositoryPolicies =
+                    m_policyStrategy.loadPolicies(m_policyParser,
+                    m_validateRepositoryPolicies,
+                    new File(m_repositoryBackendPolicyDirectoryPath));
+            repositoryPolicies.putAll(
+                    m_policyStrategy.loadPolicies(m_policyParser,
+                                 m_validateRepositoryPolicies,
+                                 new File(m_repositoryPolicyDirectoryPath)));
+            m_repositoryPolicies = repositoryPolicies.values();
+        } catch (Exception e) {
+            logger.error(e.toString(),e);
+            throw new RuntimeException("Error loading repository policies", e); // alas, no exception in signature
+        }
     }
 
     /**
@@ -206,24 +252,44 @@ public class PolicyFinderModule
         }
     }
 
-    // load and parse all policies (*.xml) from a given directory, recursively
-    private static List<AbstractPolicy> loadPolicies(PolicyParser parser,
-                                                     boolean validate,
-                                                     File dir)
-            throws IOException, ValidationException {
-        List<AbstractPolicy> policies = new ArrayList<AbstractPolicy>();
-        for (File file: dir.listFiles()) {
-            if (file.isDirectory()) {
-                policies.addAll(loadPolicies(parser, validate, file));
-            } else {
-                if (file.getName().endsWith(".xml")) {
-                    logger.info("Loading policy: " + file.getPath());
-                    InputStream policyStream = new FileInputStream(file);
-                    policies.add(parser.parse(policyStream, validate));
-                }
-            }
-        }
-        return policies;
+    private void setupActivePolicyDirectories() throws Exception {
+        FileUtils.copy(new File(m_defaultRepositoryPoliciesDirectoryPath),
+                new File(m_repositoryPolicyDirectoryPath + File.separator + DEFAULT));
+        generateBackendPolicies();
     }
 
+    private final void generateBackendPolicies() throws Exception {
+        File backendPoliciesDirectory = new File(m_repositoryBackendPolicyDirectoryPath);
+        if (!backendPoliciesDirectory.exists()) backendPoliciesDirectory.mkdirs();
+        else FileUtils.deleteFiles(backendPoliciesDirectory);
+        BackendPolicies backendPolicies =
+                new BackendPolicies(m_repositoryBackendSecurityXMLLocation);
+        Hashtable<String, String> tempfiles = backendPolicies.generateBackendPolicies();
+        TransformerFactory tfactory = XmlTransformUtility.getTransformerFactory();
+        try {
+            Iterator<String> iterator = tempfiles.keySet().iterator();
+            while (iterator.hasNext()) {
+                File f =
+                        new File(m_repositoryBackendXSLLocation); // <<stylesheet
+                // location
+                StreamSource ss = new StreamSource(f);
+                Transformer transformer = tfactory.newTransformer(ss); // xformPath
+                String key = iterator.next();
+                File infile = new File(tempfiles.get(key));
+                FileInputStream fis = new FileInputStream(infile);
+                FileOutputStream fos =
+                        new FileOutputStream(m_repositoryBackendPolicyDirectoryPath
+                                             + File.separator + key);
+                transformer.transform(new StreamSource(fis),
+                                      new StreamResult(fos));
+            }
+        } finally {
+            // we're done with temp files now, so delete them
+            Iterator<String> iter = tempfiles.keySet().iterator();
+            while (iter.hasNext()) {
+                File tempFile = new File(tempfiles.get(iter.next()));
+                tempFile.delete();
+            }
+        }
+    }
 }
